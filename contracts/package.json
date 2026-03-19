@@ -1,0 +1,19 @@
+{
+  "name": "contracts",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:local": "hardhat ignition deploy ignition/modules/EscrowFactory.ts --network localhost",
+    "deploy:base-sepolia": "hardhat ignition deploy ignition/modules/EscrowFactory.ts --network baseSepolia",
+    "deploy:base": "hardhat ignition deploy ignition/modules/EscrowFactory.ts --network base"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "hardhat": "^2.19.0"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.0"
+  }
+}

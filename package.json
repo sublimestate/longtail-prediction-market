@@ -1,0 +1,8 @@
+{
+  "name": "longtail-prediction-market",
+  "private": true,
+  "workspaces": [
+    "contracts",
+    "agents"
+  ]
+}

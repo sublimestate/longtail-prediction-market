@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:synthesis.md)",
+      "Bash(curl:*)",
+      "WebSearch",
+      "WebFetch(domain:docs.openserv.com)"
+    ]
+  }
+}
