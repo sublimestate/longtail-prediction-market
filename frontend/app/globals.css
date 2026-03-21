@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-navy-900: #1a1a2e;
+  --color-navy-800: #16213e;
+  --color-navy-700: #1e1e3a;
+  --color-status-created: #60a5fa;
+  --color-status-funded: #a78bfa;
+  --color-status-resolving: #fbbf24;
+  --color-status-settled: #4ade80;
+  --color-status-expired: #6b7280;
+}
