@@ -1,6 +1,7 @@
-import { Agent } from '@openserv-labs/sdk';
+import 'dotenv/config';
+import { Agent, run } from '@openserv-labs/sdk';
+import { provision, triggers } from '@openserv-labs/client';
 import { z } from 'zod';
-import { config } from '../shared/config.js';
 import {
   createEscrow,
   deposit,
@@ -14,8 +15,6 @@ import type { PredictionSpec } from '../shared/types.js';
 import type { Address } from 'viem';
 
 const agent = new Agent({
-  port: config.ports.deployer,
-  apiKey: config.openserv.deployerApiKey,
   systemPrompt: `You are the Contract Deployer agent for a long-tail prediction market. Your role is to:
 1. Deploy escrow contracts via the factory on Base
 2. Coordinate USDC approvals and deposits from both parties
@@ -27,11 +26,12 @@ You never write or modify Solidity code — you only provide deployment paramete
 
 agent.addCapability({
   name: 'deploy-escrow',
-  description: 'Deploys an escrow contract for a matched prediction. Input is the matched prediction spec JSON.',
+  description:
+    'Deploys an escrow contract for a matched prediction. Input is the matched prediction spec JSON.',
   schema: z.object({
     prediction: z.string().describe('JSON string of the matched PredictionSpec'),
   }),
-  async run({ args, action }) {
+  async run({ args }) {
     let spec: PredictionSpec;
     try {
       spec = JSON.parse(args.prediction);
@@ -43,7 +43,7 @@ agent.addCapability({
       return 'Error: Prediction must be matched with both parties before deploying escrow.';
     }
 
-    if (!config.blockchain.factoryAddress) {
+    if (!process.env.FACTORY_ADDRESS) {
       return 'Error: FACTORY_ADDRESS not set in environment. Deploy the factory contract first.';
     }
 
@@ -78,23 +78,6 @@ agent.addCapability({
       // 4. Verify funded state
       const state = await getEscrowState(escrowAddress);
       spec.status = state.state === 'Funded' ? 'funded' : spec.status;
-
-      // 5. Create task for resolution agent
-      if (action?.workspace?.id && state.state === 'Funded') {
-        try {
-          await agent.createTask({
-            workspaceId: action.workspace.id,
-            assignee: config.agentIds.resolution,
-            description: `Monitor and resolve prediction: ${spec.description}`,
-            body: JSON.stringify(spec),
-            input: JSON.stringify(spec),
-            expectedOutput: 'Resolution submitted on-chain with jury verdict',
-            dependencies: [],
-          });
-        } catch (e) {
-          console.error('Failed to create resolution task:', e);
-        }
-      }
 
       return `Escrow deployed and funded successfully:\n\`\`\`json\n${JSON.stringify(
         {
@@ -144,8 +127,26 @@ agent.addCapability({
   },
 });
 
-agent.start().then(() => {
-  console.log(`Contract Deployer agent running on port ${config.ports.deployer}`);
-});
+async function main() {
+  const result = await provision({
+    agent: {
+      instance: agent,
+      name: 'prediction-deployer',
+      description:
+        'Deploys escrow contracts via the factory on Base, coordinates USDC deposits from both parties, and verifies the escrow reaches Funded state.',
+    },
+    workflow: {
+      name: 'Prediction Contract Deployer',
+      goal: 'Deploy per-prediction escrow contracts on Base using the audited factory pattern, coordinate USDC approvals and deposits from both parties, verify funded state, then forward to resolution agent.',
+      trigger: triggers.manual(),
+      task: { description: 'Deploy and fund escrow contract' },
+    },
+  });
+
+  console.log(`Contract Deployer provisioned (agent ID: ${result.agentId})`);
+  await run(agent);
+}
+
+main().catch(console.error);
 
 export default agent;

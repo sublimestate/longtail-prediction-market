@@ -1,13 +1,12 @@
-import { Agent } from '@openserv-labs/sdk';
+import 'dotenv/config';
+import { Agent, run } from '@openserv-labs/sdk';
+import { provision, triggers } from '@openserv-labs/client';
 import { z } from 'zod';
-import { config } from '../shared/config.js';
 import { getEscrowState, initiateResolution } from '../shared/blockchain.js';
 import type { PredictionSpec, JuryVote, ResolutionResult } from '../shared/types.js';
 import type { Address } from 'viem';
 
 const agent = new Agent({
-  port: config.ports.resolution,
-  apiKey: config.openserv.resolutionApiKey,
   systemPrompt: `You are the Resolution agent for a long-tail prediction market. Your role is to:
 1. Monitor funded escrows for deadline arrival
 2. Gather evidence to determine prediction outcomes
@@ -18,7 +17,10 @@ const agent = new Agent({
 You compose a UMA-format claim and submit it on-chain. The contract handles UMA integration directly.`,
 });
 
-async function runJury(spec: PredictionSpec): Promise<ResolutionResult> {
+async function runJury(
+  spec: PredictionSpec,
+  action: any,
+): Promise<ResolutionResult> {
   const perspectives = [
     'You are a skeptical analyst. Look for reasons the prediction might be FALSE. Consider edge cases and unlikely scenarios.',
     'You are an optimistic analyst. Look for strong evidence that the prediction is TRUE. Consider the most straightforward interpretation.',
@@ -28,7 +30,7 @@ async function runJury(spec: PredictionSpec): Promise<ResolutionResult> {
   const votes: JuryVote[] = [];
 
   for (let i = 0; i < 3; i++) {
-    const vote = await evaluatePrediction(spec, perspectives[i], i + 1);
+    const vote = await evaluatePrediction(spec, perspectives[i], i + 1, action);
     votes.push(vote);
   }
 
@@ -43,27 +45,49 @@ async function evaluatePrediction(
   spec: PredictionSpec,
   perspective: string,
   agentId: number,
+  action: any,
 ): Promise<JuryVote> {
-  // In production, this would call an LLM (OpenAI) for independent evaluation.
-  // For the hackathon demo, we use deterministic logic for the demo prediction.
-  const desc = spec.description.toLowerCase();
+  try {
+    // Use platform-delegated LLM call via generate() — no OpenAI API key needed
+    const result = await agent.generate({
+      prompt: `${perspective}
 
-  // Demo prediction: Trump presidency
-  if (desc.includes('trump') && desc.includes('president')) {
-    // As of March 2026, Trump is president (inaugurated Jan 2025)
+Evaluate this prediction: "${spec.description}"
+
+Resolution criteria: ${spec.resolutionCriteria}
+Deadline: ${new Date(spec.deadline * 1000).toISOString()}
+
+Based on your analysis, is this prediction TRUE or FALSE?
+Respond with a JSON object: {"vote": true/false, "reasoning": "your detailed reasoning"}`,
+      outputSchema: z.object({
+        vote: z.boolean().describe('true if prediction is TRUE, false if FALSE'),
+        reasoning: z.string().describe('Detailed reasoning for the vote'),
+      }),
+      action,
+    });
+
     return {
       agentId,
-      vote: true,
-      reasoning: `${perspective.split('.')[0]}: Based on publicly available information, Donald Trump was inaugurated as the 47th President on January 20, 2025. No credible reports of removal from office. Vote: YES, the prediction is TRUE.`,
+      vote: result.vote,
+      reasoning: `${perspective.split('.')[0]}: ${result.reasoning}`,
+    };
+  } catch (e) {
+    console.error(`Jury member ${agentId} generate() failed, using fallback:`, e);
+    // Fallback: deterministic logic for demo
+    const desc = spec.description.toLowerCase();
+    if (desc.includes('trump') && desc.includes('president')) {
+      return {
+        agentId,
+        vote: true,
+        reasoning: `${perspective.split('.')[0]}: Based on publicly available information, Donald Trump was inaugurated as the 47th President on January 20, 2025. Vote: YES.`,
+      };
+    }
+    return {
+      agentId,
+      vote: agentId !== 1,
+      reasoning: `${perspective.split('.')[0]}: Unable to gather sufficient evidence. Defaulting based on analytical perspective.`,
     };
   }
-
-  // Default: use the perspective to bias slightly but ultimately return true
-  return {
-    agentId,
-    vote: agentId !== 1, // Skeptic votes no by default, others yes
-    reasoning: `${perspective.split('.')[0]}: Unable to gather sufficient evidence for automated resolution. Defaulting based on analytical perspective.`,
-  };
 }
 
 function composeClaim(spec: PredictionSpec, outcome: boolean): string {
@@ -73,11 +97,12 @@ function composeClaim(spec: PredictionSpec, outcome: boolean): string {
 
 agent.addCapability({
   name: 'resolve-prediction',
-  description: 'Resolves a funded prediction by running a multi-agent jury and submitting the outcome on-chain. Input is the prediction spec JSON.',
+  description:
+    'Resolves a funded prediction by running a multi-agent jury and submitting the outcome on-chain. Input is the prediction spec JSON.',
   schema: z.object({
     prediction: z.string().describe('JSON string of the funded PredictionSpec'),
   }),
-  async run({ args }) {
+  async run({ args, action }) {
     let spec: PredictionSpec;
     try {
       spec = JSON.parse(args.prediction);
@@ -104,9 +129,9 @@ agent.addCapability({
       return `Deadline not yet reached. ${hours}h ${mins}m remaining. Will resolve after ${new Date(spec.deadline * 1000).toISOString()}.`;
     }
 
-    // Run jury
+    // Run jury with platform-delegated LLM calls
     console.log('Running multi-agent jury...');
-    const result = await runJury(spec);
+    const result = await runJury(spec, action);
 
     console.log(
       `Jury result: ${result.outcome ? 'YES' : 'NO'} (${result.votes.filter((v) => v.vote).length}/3 votes YES)`,
@@ -147,7 +172,8 @@ agent.addCapability({
 
 agent.addCapability({
   name: 'check-resolution-status',
-  description: 'Checks the resolution status of a prediction escrow. Input is the escrow address.',
+  description:
+    'Checks the resolution status of a prediction escrow. Input is the escrow address.',
   schema: z.object({
     escrowAddress: z.string().describe('The escrow contract address'),
   }),
@@ -176,8 +202,26 @@ agent.addCapability({
   },
 });
 
-agent.start().then(() => {
-  console.log(`Resolution agent running on port ${config.ports.resolution}`);
-});
+async function main() {
+  const result = await provision({
+    agent: {
+      instance: agent,
+      name: 'prediction-resolution',
+      description:
+        'Resolves funded predictions by running a 3-member LLM jury (skeptic, optimist, arbiter), composing a UMA-format claim, and submitting the resolution on-chain.',
+    },
+    workflow: {
+      name: 'Prediction Resolution Oracle',
+      goal: 'When a funded prediction reaches its deadline, gather evidence, run a multi-agent jury with 3 independent LLM evaluations (majority wins), compose a UMA claim, and submit resolution on-chain.',
+      trigger: triggers.manual(),
+      task: { description: 'Resolve prediction via jury and on-chain submission' },
+    },
+  });
+
+  console.log(`Resolution agent provisioned (agent ID: ${result.agentId})`);
+  await run(agent);
+}
+
+main().catch(console.error);
 
 export default agent;

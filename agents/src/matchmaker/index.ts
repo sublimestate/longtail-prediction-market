@@ -1,12 +1,11 @@
-import { Agent } from '@openserv-labs/sdk';
+import 'dotenv/config';
+import { Agent, run } from '@openserv-labs/sdk';
+import { provision, triggers } from '@openserv-labs/client';
 import { z } from 'zod';
-import { config } from '../shared/config.js';
 import { getDeployerAddress, getCounterpartyAddress } from '../shared/blockchain.js';
 import type { PredictionSpec } from '../shared/types.js';
 
 const agent = new Agent({
-  port: config.ports.matchmaker,
-  apiKey: config.openserv.matchmakerApiKey,
   systemPrompt: `You are the Matchmaker agent for a long-tail prediction market. Your role is to:
 1. Maintain a pool of open predictions
 2. Search for counterparties when new predictions arrive
@@ -21,11 +20,12 @@ const predictionPool: PredictionSpec[] = [];
 
 agent.addCapability({
   name: 'match-prediction',
-  description: 'Receives a PredictionSpec and finds/assigns a counterparty. Input is the prediction spec JSON.',
+  description:
+    'Receives a PredictionSpec and finds/assigns a counterparty. Input is the prediction spec JSON.',
   schema: z.object({
     prediction: z.string().describe('JSON string of the PredictionSpec to match'),
   }),
-  async run({ args, action }) {
+  async run({ args }) {
     let spec: PredictionSpec;
     try {
       spec = JSON.parse(args.prediction);
@@ -33,13 +33,12 @@ agent.addCapability({
       return 'Error: Invalid prediction JSON';
     }
 
-    // The prediction creator takes the "Yes" side by default
     const deployerAddr = getDeployerAddress();
     const counterpartyAddr = getCounterpartyAddress();
 
     // Check pool for an existing counterparty
     const match = predictionPool.find(
-      (p) => p.status === 'open' && p.description === spec.description && p.id !== spec.id
+      (p) => p.status === 'open' && p.description === spec.description && p.id !== spec.id,
     );
 
     if (match) {
@@ -57,23 +56,6 @@ agent.addCapability({
     spec.status = 'matched';
 
     predictionPool.push(spec);
-
-    // Create task for contract deployer
-    if (action?.workspace?.id) {
-      try {
-        await agent.createTask({
-          workspaceId: action.workspace.id,
-          assignee: config.agentIds.deployer,
-          description: `Deploy escrow for prediction: ${spec.description}`,
-          body: JSON.stringify(spec),
-          input: JSON.stringify(spec),
-          expectedOutput: 'Deployed and funded escrow contract address',
-          dependencies: [],
-        });
-      } catch (e) {
-        console.error('Failed to create deployer task:', e);
-      }
-    }
 
     return formatMatchResult(spec, 'auto-matched with agent counterparty (no human found)');
   },
@@ -110,8 +92,26 @@ function formatMatchResult(spec: PredictionSpec, method: string): string {
   )}\n\`\`\`\n\nForwarded to Contract Deployer agent.`;
 }
 
-agent.start().then(() => {
-  console.log(`Matchmaker agent running on port ${config.ports.matchmaker}`);
-});
+async function main() {
+  const result = await provision({
+    agent: {
+      instance: agent,
+      name: 'prediction-matchmaker',
+      description:
+        'Matches predictions with counterparties. Searches the pool for opposing views, or auto-assigns a pre-funded agent wallet if no human counterparty is found.',
+    },
+    workflow: {
+      name: 'Prediction Matchmaker',
+      goal: 'Find counterparties for open predictions by searching the pool or auto-assigning an agent wallet, then forward matched predictions to the contract deployer.',
+      trigger: triggers.manual(),
+      task: { description: 'Match prediction with counterparty' },
+    },
+  });
+
+  console.log(`Matchmaker provisioned (agent ID: ${result.agentId})`);
+  await run(agent);
+}
+
+main().catch(console.error);
 
 export default agent;

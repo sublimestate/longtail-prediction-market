@@ -1,5 +1,8 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { resolve } from 'path';
+import dotenv from 'dotenv';
+
+dotenv.config({ path: resolve(import.meta.dirname, '../../.env') });
 
 const agents = [
   { name: 'Market Maker', path: 'src/market-maker/index.ts' },
@@ -14,7 +17,8 @@ function startAgent(name: string, path: string): ChildProcess {
   const fullPath = resolve(import.meta.dirname, '..', path);
   const proc = spawn('npx', ['tsx', fullPath], {
     stdio: 'pipe',
-    env: process.env,
+    env: { ...process.env },
+    cwd: resolve(import.meta.dirname, '../..'),
   });
 
   proc.stdout?.on('data', (data: Buffer) => {
@@ -32,15 +36,28 @@ function startAgent(name: string, path: string): ChildProcess {
   return proc;
 }
 
-console.log('Starting all prediction market agents...\n');
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-for (const agent of agents) {
-  const proc = startAgent(agent.name, agent.path);
-  processes.push(proc);
-  console.log(`Started ${agent.name} agent`);
+async function startAll() {
+  console.log('Starting all prediction market agents...\n');
+  console.log('Each agent will self-provision via @openserv-labs/client on first run.\n');
+  console.log('Staggering starts to avoid SIWE auth race conditions.\n');
+
+  for (let i = 0; i < agents.length; i++) {
+    const agent = agents[i];
+    if (i > 0) {
+      console.log(`Waiting 8s before starting ${agent.name}...`);
+      await sleep(8000);
+    }
+    const proc = startAgent(agent.name, agent.path);
+    processes.push(proc);
+    console.log(`Started ${agent.name} agent`);
+  }
+
+  console.log('\nAll agents started. Press Ctrl+C to stop.\n');
 }
 
-console.log('\nAll agents started. Press Ctrl+C to stop.\n');
+startAll();
 
 process.on('SIGINT', () => {
   console.log('\nShutting down all agents...');

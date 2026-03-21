@@ -1,12 +1,11 @@
-import { Agent } from '@openserv-labs/sdk';
+import 'dotenv/config';
+import { Agent, run } from '@openserv-labs/sdk';
+import { provision, triggers } from '@openserv-labs/client';
 import { z } from 'zod';
 import { v4 as uuid } from 'uuid';
-import { config } from '../shared/config.js';
 import type { PredictionSpec } from '../shared/types.js';
 
 const agent = new Agent({
-  port: config.ports.marketMaker,
-  apiKey: config.openserv.marketMakerApiKey,
   systemPrompt: `You are the Market Maker agent for a long-tail prediction market. Your role is to:
 1. Accept natural language predictions from users
 2. Structure them into formal prediction specifications
@@ -23,18 +22,19 @@ Always respond with valid JSON matching the PredictionSpec format.`,
 
 agent.addCapability({
   name: 'create-prediction',
-  description: 'Takes a natural language prediction and structures it into a formal PredictionSpec. Input should be a JSON object with "prediction" (string), optional "stakeAmount" (string, USDC), and optional "deadline" (ISO date string).',
+  description:
+    'Takes a natural language prediction and structures it into a formal PredictionSpec. Input should be a JSON object with "prediction" (string), optional "stakeAmount" (string, USDC), and optional "deadline" (ISO date string).',
   schema: z.object({
     prediction: z.string().describe('Natural language prediction statement'),
     stakeAmount: z.string().optional().describe('Stake amount in USDC (default: "10")'),
     deadline: z.string().optional().describe('Deadline as ISO date string'),
   }),
-  async run({ args, action }) {
+  async run({ args }) {
     const { prediction, stakeAmount = '10', deadline } = args;
 
     const deadlineTs = deadline
       ? Math.floor(new Date(deadline).getTime() / 1000)
-      : Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60; // default 1 week
+      : Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
 
     const spec: PredictionSpec = {
       id: uuid(),
@@ -45,23 +45,6 @@ agent.addCapability({
       status: 'open',
       createdAt: Math.floor(Date.now() / 1000),
     };
-
-    // If running within a workspace, create a task for the matchmaker
-    if (action?.workspace?.id) {
-      try {
-        await agent.createTask({
-          workspaceId: action.workspace.id,
-          assignee: config.agentIds.matchmaker,
-          description: `Find a counterparty for prediction: ${spec.description}`,
-          body: JSON.stringify(spec),
-          input: JSON.stringify(spec),
-          expectedOutput: 'Matched prediction spec with both parties assigned',
-          dependencies: [],
-        });
-      } catch (e) {
-        console.error('Failed to create matchmaker task:', e);
-      }
-    }
 
     return `Prediction created successfully:\n\`\`\`json\n${JSON.stringify(spec, null, 2)}\n\`\`\`\n\nThe prediction has been forwarded to the Matchmaker agent to find a counterparty.`;
   },
@@ -98,8 +81,26 @@ agent.addCapability({
   },
 });
 
-agent.start().then(() => {
-  console.log(`Market Maker agent running on port ${config.ports.marketMaker}`);
-});
+async function main() {
+  const result = await provision({
+    agent: {
+      instance: agent,
+      name: 'prediction-market-maker',
+      description:
+        'Accepts natural language predictions and structures them into formal specs with event description, deadline, resolution criteria, and stake amount.',
+    },
+    workflow: {
+      name: 'Prediction Market Maker',
+      goal: 'Accept natural language predictions from users, structure them into formal prediction specifications with deadline, stake, and resolution criteria, then forward to matchmaker.',
+      trigger: triggers.manual(),
+      task: { description: 'Process prediction request' },
+    },
+  });
+
+  console.log(`Market Maker provisioned (agent ID: ${result.agentId})`);
+  await run(agent);
+}
+
+main().catch(console.error);
 
 export default agent;

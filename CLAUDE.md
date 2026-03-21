@@ -10,33 +10,39 @@ Multi-agent system on OpenServ: propose predictions, find counterparties, deploy
 # Contracts
 cd contracts && npx hardhat compile   # Compile Solidity
 cd contracts && npx hardhat test      # Run all 12 contract tests
+cd contracts && npx hardhat run scripts/deploy.ts --network baseSepolia  # Deploy factory
 
-# Agents (requires env vars set)
-cd agents && npm run start            # Start all 4 agents (ports 7378-7381)
+# Agents
+cd agents && npm run start            # Start all 4 agents (auto-provisions on first run)
+cd agents && npm run setup-workflow   # Create multi-agent pipeline workflow
 cd agents && npx tsc --noEmit         # Type-check agent code
 ```
 
 ## Project Structure
 
 Monorepo with two npm workspaces:
-- `contracts/` — Hardhat, Solidity 0.8.24, OpenZeppelin v5
-- `agents/` — OpenServ SDK v2.x, viem, ESM modules
+- `contracts/` — Hardhat, Solidity 0.8.24, OpenZeppelin v5, Base Sepolia
+- `agents/` — OpenServ SDK v2.x + Client v2.x, viem, ESM modules
 - Key contracts: `PredictionEscrow.sol`, `EscrowFactory.sol`
 - Key shared code: `agents/src/shared/blockchain.ts` (viem clients + contract helpers)
+- Key scripts: `agents/src/setup-workflow.ts` (creates pipeline workflow)
 
 ## Environment
 
 Required in `.env`:
-- `OPENSERV_API_KEY_MARKET_MAKER`, `_MATCHMAKER`, `_DEPLOYER`, `_RESOLUTION`
 - `DEPLOYER_PRIVATE_KEY`, `COUNTERPARTY_PRIVATE_KEY`
 - `FACTORY_ADDRESS` (set after deploying EscrowFactory)
-- `OPENAI_API_KEY` (for resolution jury in production)
+
+Auto-created by `provision()`:
+- `WALLET_PRIVATE_KEY` — OpenServ platform wallet (saved to `.env` and `.openserv.json`)
+- Agent API keys and auth tokens — stored in `.openserv.json`
 
 ## Hackathon
 
 - **Event:** The Synthesis
 - **Tracks:** Ship Something Real with OpenServ, Best OpenServ Build Story, Agent Services on Base
-- **Stack:** OpenServ SDK (TypeScript), Solidity, Base Mainnet
+- **Stack:** OpenServ SDK + Client (TypeScript), Solidity, Base Sepolia
+Hackathon URL: https://synthesis.md/
 
 ## Agent Architecture
 
@@ -48,7 +54,7 @@ Required in `.env`:
 ### 2. Matchmaker Agent
 - Maintains a pool of open predictions
 - Searches for opposing views when a new prediction arrives
-- Handles odds negotiation between two sides
+- Auto-assigns pre-funded agent wallet if no human counterparty found
 
 ### 3. Contract Deployer Agent
 - Deploys per-prediction escrow contracts on Base using an audited factory pattern
@@ -63,6 +69,12 @@ Required in `.env`:
 - UMA dispute window (2hr) — losing party can dispute; escalates to DVM voters if challenged
 - After settlement, UMA calls back into the escrow contract to release funds
 
+### Agent Provisioning
+- All agents self-provision on first start via `provision()` from `@openserv-labs/client`
+- Resolution jury uses `generate()` for platform-delegated LLM calls (no OpenAI key needed)
+- `setup-workflow.ts` creates the unified pipeline: Webhook → Market Maker → Matchmaker → Deployer → Resolution
+- Agent IDs and credentials stored in `.openserv.json` (gitignored)
+
 ## Decisions
 
 ### Resolution Trust
@@ -74,7 +86,7 @@ UMA Optimistic Oracle V3 on Base is the on-chain truth layer.
 - UMA OOv3 Base Sepolia: `0x0F7fC5E6482f096380db6158f978167b57388deE`
 
 ### Hackathon Scope
-Full end-to-end flow. Demo prediction: "Is Donald Trump still President as of March 20, 2026 3:00pm ET?" Pre-seed the counterparty to de-risk the demo.
+Full end-to-end flow. Counterparty pre-seeded via agent wallet. Factory deployed at `0x835a91497987D21F8Cb92336190BC99Cc90908F7` on Base Sepolia.
 
 ### Counterparty Discovery
 Combine active matchmaking + agent counterparty:
@@ -92,3 +104,10 @@ Audited template + factory pattern:
 
 ### Regulatory
 Non-custodial P2P infrastructure. Avoid sports/elections content without legal review.
+
+## Gotchas
+
+- **SIWE race condition**: Starting all 4 agents simultaneously causes wallet auth failures. `start-all.ts` staggers starts by 8 seconds.
+- **`.openserv.json` state**: `provision()` stores agent IDs/credentials here. `getProvisionedInfo()` requires the exact workflow name as the second argument.
+- **`generate()` fallback**: Resolution jury uses `generate()` for LLM calls but falls back to deterministic logic if it fails (e.g., demo Trump prediction always returns YES).
+- **Escrow deadline**: Must be in the future at deployment time, even if the prediction evaluates a past event.

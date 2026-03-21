@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "start": "tsx src/start-all.ts",
+    "setup-workflow": "tsx src/setup-workflow.ts",
     "market-maker": "tsx src/market-maker/index.ts",
     "matchmaker": "tsx src/matchmaker/index.ts",
     "deployer": "tsx src/contract-deployer/index.ts",
     "resolution": "tsx src/resolution/index.ts"
   },
   "dependencies": {
+    "@openserv-labs/client": "^2.5.3",
     "@openserv-labs/sdk": "^2.4.1",
     "dotenv": "^16.3.1",
     "uuid": "^9.0.0",
