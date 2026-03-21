@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { Agent, run } from '@openserv-labs/sdk';
 import { provision, triggers } from '@openserv-labs/client';
 import { z } from 'zod';
-import { getEscrowState, initiateResolution } from '../shared/blockchain.js';
+import { getEscrowState, initiateResolution, settleAssertion } from '../shared/blockchain.js';
 import { parsePredictionSpec, type PredictionSpec, type JuryVote, type ResolutionResult } from '../shared/types.js';
 import type { Address } from 'viem';
 
@@ -159,7 +159,7 @@ agent.addCapability({
             vote: v.vote ? 'YES' : 'NO',
             reasoning: v.reasoning,
           })),
-          note: 'UMA liveness period (2hr) started. Dispute window open.',
+          note: 'UMA liveness period (2hr) started. Call settle-assertion with this escrow address after 2hr to finalize and release funds.',
         },
         null,
         2,
@@ -188,7 +188,7 @@ agent.addCapability({
           resolvedYes: state.resolvedYes,
           note:
             state.state === 'Resolving'
-              ? 'UMA liveness period active. Call settleAssertion() after 2hr if undisputed.'
+              ? 'UMA liveness period active. Call settle-assertion with this escrow address after 2hr if undisputed.'
               : state.state === 'Settled'
                 ? `Outcome: ${state.resolvedYes ? 'YES' : 'NO'}. Funds distributed.`
                 : 'Awaiting resolution.',
@@ -198,6 +198,55 @@ agent.addCapability({
       )}\n\`\`\``;
     } catch (e) {
       return `Error checking resolution: ${e}`;
+    }
+  },
+});
+
+agent.addCapability({
+  name: 'settle-assertion',
+  description:
+    'Settles a UMA assertion after the 2hr liveness period has elapsed, triggering payout from the escrow to the winner.',
+  schema: z.object({
+    escrowAddress: z.string().describe('The escrow contract address to settle'),
+  }),
+  async run({ args }) {
+    try {
+      const state = await getEscrowState(args.escrowAddress as Address);
+
+      if (state.state === 'Settled') {
+        return `Already settled:\n\`\`\`json\n${JSON.stringify(
+          {
+            escrowAddress: args.escrowAddress,
+            outcome: state.resolvedYes ? 'YES' : 'NO',
+            winner: state.resolvedYes ? state.partyYes : state.partyNo,
+          },
+          null,
+          2,
+        )}\n\`\`\``;
+      }
+
+      if (state.state !== 'Resolving') {
+        return `Error: Escrow is in state "${state.state}" — must be "Resolving" to settle.`;
+      }
+
+      const result = await settleAssertion(args.escrowAddress as Address);
+
+      return `Settlement complete:\n\`\`\`json\n${JSON.stringify(
+        {
+          escrowAddress: args.escrowAddress,
+          outcome: result.resolvedYes ? 'YES' : 'NO',
+          winner: result.winner,
+          txHash: result.txHash,
+        },
+        null,
+        2,
+      )}\n\`\`\``;
+    } catch (e: any) {
+      const msg = e?.message || String(e);
+      if (msg.includes('Assertion not expired') || msg.includes('liveness')) {
+        return `Liveness period not yet elapsed. The 2hr UMA dispute window is still active. Try again later.`;
+      }
+      return `Error settling assertion: ${msg}`;
     }
   },
 });

@@ -35,6 +35,10 @@ export const predictionEscrowAbi = parseAbi([
   'event Settled(bool resolvedYes, address winner)',
 ]);
 
+export const umaOOv3Abi = parseAbi([
+  'function settleAssertion(bytes32 assertionId) external',
+]);
+
 export const erc20Abi = parseAbi([
   'function approve(address spender, uint256 amount) external returns (bool)',
   'function balanceOf(address account) external view returns (uint256)',
@@ -189,6 +193,39 @@ export async function getUsdcBalance(address: Address): Promise<bigint> {
     args: [address],
   });
   return balance as bigint;
+}
+
+export async function settleAssertion(escrowAddress: Address): Promise<{
+  txHash: string;
+  resolvedYes: boolean;
+  winner: Address;
+}> {
+  const state = await getEscrowState(escrowAddress);
+
+  if (state.state === 'Settled') {
+    throw new Error('Escrow is already settled.');
+  }
+  if (state.state !== 'Resolving') {
+    throw new Error(`Escrow is in state "${state.state}" — must be "Resolving" to settle.`);
+  }
+  if (state.assertionId === '0x0000000000000000000000000000000000000000000000000000000000000000') {
+    throw new Error('No assertionId found on escrow.');
+  }
+
+  const hash = await deployerWallet.writeContract({
+    address: config.contracts.umaOOv3BaseSepolia,
+    abi: umaOOv3Abi,
+    functionName: 'settleAssertion',
+    args: [state.assertionId],
+    chain: baseSepolia,
+  });
+
+  await publicClient.waitForTransactionReceipt({ hash });
+
+  const settled = await getEscrowState(escrowAddress);
+  const winner = settled.resolvedYes ? settled.partyYes : settled.partyNo;
+
+  return { txHash: hash, resolvedYes: settled.resolvedYes, winner };
 }
 
 export async function getEscrowState(escrowAddress: Address): Promise<{
