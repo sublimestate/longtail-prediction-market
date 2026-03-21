@@ -5,7 +5,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { PipelineStepper } from '@/components/PipelineStepper';
 import { JuryCard } from '@/components/JuryCard';
 import { CountdownTimer } from '@/components/CountdownTimer';
-import type { Address } from 'viem';
+import { isAddress, type Address } from 'viem';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,11 +22,20 @@ export default async function PredictionPage({
 }) {
   const { address } = await params;
 
+  if (!isAddress(address)) {
+    return (
+      <main className="max-w-3xl mx-auto px-4 py-8">
+        <Link href="/" className="text-purple-400 hover:text-purple-300 text-sm mb-4 block">← Back</Link>
+        <p className="text-red-400">Invalid address</p>
+      </main>
+    );
+  }
+
   let prediction;
   try {
-    prediction = await getEscrowState(address as Address);
+    const base = await getEscrowState(address as Address);
     const meta = await getAgentMetadata(address);
-    if (meta) Object.assign(prediction, meta);
+    prediction = meta ? { ...base, ...meta } : base;
   } catch (e: any) {
     return (
       <main className="max-w-3xl mx-auto px-4 py-8">
