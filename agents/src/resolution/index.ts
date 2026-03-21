@@ -3,7 +3,7 @@ import { Agent, run } from '@openserv-labs/sdk';
 import { provision, triggers } from '@openserv-labs/client';
 import { z } from 'zod';
 import { getEscrowState, initiateResolution } from '../shared/blockchain.js';
-import type { PredictionSpec, JuryVote, ResolutionResult } from '../shared/types.js';
+import { parsePredictionSpec, type PredictionSpec, type JuryVote, type ResolutionResult } from '../shared/types.js';
 import type { Address } from 'viem';
 
 const agent = new Agent({
@@ -55,7 +55,7 @@ async function evaluatePrediction(
 Evaluate this prediction: "${spec.description}"
 
 Resolution criteria: ${spec.resolutionCriteria}
-Deadline: ${new Date(spec.deadline * 1000).toISOString()}
+Deadline: ${spec.deadline > 0 ? new Date(spec.deadline * 1000).toISOString() : 'unknown'}
 
 Based on your analysis, is this prediction TRUE or FALSE?
 Respond with a JSON object: {"vote": true/false, "reasoning": "your detailed reasoning"}`,
@@ -91,7 +91,7 @@ Respond with a JSON object: {"vote": true/false, "reasoning": "your detailed rea
 }
 
 function composeClaim(spec: PredictionSpec, outcome: boolean): string {
-  const deadlineStr = new Date(spec.deadline * 1000).toISOString();
+  const deadlineStr = spec.deadline > 0 ? new Date(spec.deadline * 1000).toISOString() : 'unknown';
   return `Prediction: "${spec.description}" | Deadline: ${deadlineStr} | Resolution: The prediction is ${outcome ? 'TRUE' : 'FALSE'} as determined by multi-agent jury (majority vote).`;
 }
 
@@ -105,9 +105,9 @@ agent.addCapability({
   async run({ args, action }) {
     let spec: PredictionSpec;
     try {
-      spec = JSON.parse(args.prediction);
-    } catch {
-      return 'Error: Invalid prediction JSON';
+      spec = parsePredictionSpec(args.prediction);
+    } catch (e) {
+      return `Error: Invalid prediction JSON — ${e}`;
     }
 
     if (!spec.escrowAddress) {

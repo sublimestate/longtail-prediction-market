@@ -11,7 +11,7 @@ import {
   getDeployerAddress,
   getCounterpartyAddress,
 } from '../shared/blockchain.js';
-import type { PredictionSpec } from '../shared/types.js';
+import { parsePredictionSpec, type PredictionSpec } from '../shared/types.js';
 import type { Address } from 'viem';
 
 const agent = new Agent({
@@ -34,9 +34,9 @@ agent.addCapability({
   async run({ args }) {
     let spec: PredictionSpec;
     try {
-      spec = JSON.parse(args.prediction);
-    } catch {
-      return 'Error: Invalid prediction JSON';
+      spec = parsePredictionSpec(args.prediction);
+    } catch (e) {
+      return `Error: Invalid prediction JSON — ${e}`;
     }
 
     if (!spec.partyYes?.address || !spec.partyNo?.address) {
@@ -86,7 +86,7 @@ agent.addCapability({
           partyNo: spec.partyNo.address,
           stakeAmount: spec.stakeAmount,
           state: state.state,
-          deadline: new Date(spec.deadline * 1000).toISOString(),
+          deadline: spec.deadline > 0 ? new Date(spec.deadline * 1000).toISOString() : 'unknown',
         },
         null,
         2,

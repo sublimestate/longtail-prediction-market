@@ -14,7 +14,7 @@ cd contracts && npx hardhat run scripts/deploy.ts --network baseSepolia  # Deplo
 
 # Agents
 cd agents && npm run start            # Start all 4 agents (auto-provisions on first run)
-cd agents && npm run setup-workflow   # Create multi-agent pipeline workflow
+npx tsx agents/src/setup-workflow.ts  # Create pipeline workflow (run from project root!)
 cd agents && npx tsc --noEmit         # Type-check agent code
 ```
 
@@ -25,6 +25,7 @@ Monorepo with two npm workspaces:
 - `agents/` — OpenServ SDK v2.x + Client v2.x, viem, ESM modules
 - Key contracts: `PredictionEscrow.sol`, `EscrowFactory.sol`
 - Key shared code: `agents/src/shared/blockchain.ts` (viem clients + contract helpers)
+- Key shared code: `agents/src/shared/types.ts` (`parsePredictionSpec` — normalizes agent output formats)
 - Key scripts: `agents/src/setup-workflow.ts` (creates pipeline workflow)
 
 ## Environment
@@ -111,3 +112,6 @@ Non-custodial P2P infrastructure. Avoid sports/elections content without legal r
 - **`.openserv.json` state**: `provision()` stores agent IDs/credentials here. `getProvisionedInfo()` requires the exact workflow name as the second argument.
 - **`generate()` fallback**: Resolution jury uses `generate()` for LLM calls but falls back to deterministic logic if it fails (e.g., demo Trump prediction always returns YES).
 - **Escrow deadline**: Must be in the future at deployment time, even if the prediction evaluates a past event.
+- **Workflow task bodies**: Must include explicit tool-call instructions (e.g., "You MUST call the X tool"). Without this, the platform LLM answers tasks directly instead of invoking agent capabilities.
+- **`.openserv.json` cwd**: Agents write to project root (via `start-all.ts` cwd), but `setup-workflow.ts` reads from its own cwd. Always run `setup-workflow.ts` from the project root.
+- **Nonce race on retry**: The platform LLM may retry blockchain tool calls, causing nonce conflicts. Task bodies should say "call EXACTLY ONCE" for on-chain operations.

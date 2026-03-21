@@ -3,7 +3,7 @@ import { Agent, run } from '@openserv-labs/sdk';
 import { provision, triggers } from '@openserv-labs/client';
 import { z } from 'zod';
 import { getDeployerAddress, getCounterpartyAddress } from '../shared/blockchain.js';
-import type { PredictionSpec } from '../shared/types.js';
+import { parsePredictionSpec, type PredictionSpec } from '../shared/types.js';
 
 const agent = new Agent({
   systemPrompt: `You are the Matchmaker agent for a long-tail prediction market. Your role is to:
@@ -28,9 +28,9 @@ agent.addCapability({
   async run({ args }) {
     let spec: PredictionSpec;
     try {
-      spec = JSON.parse(args.prediction);
-    } catch {
-      return 'Error: Invalid prediction JSON';
+      spec = parsePredictionSpec(args.prediction);
+    } catch (e) {
+      return `Error: Invalid prediction JSON — ${e}`;
     }
 
     const deployerAddr = getDeployerAddress();
@@ -84,7 +84,9 @@ function formatMatchResult(spec: PredictionSpec, method: string): string {
       partyYes: spec.partyYes?.address,
       partyNo: spec.partyNo?.address,
       stakeAmount: spec.stakeAmount,
-      deadline: new Date(spec.deadline * 1000).toISOString(),
+      deadline: typeof spec.deadline === 'number' && spec.deadline > 0
+        ? new Date(spec.deadline * 1000).toISOString()
+        : String(spec.deadline),
       status: spec.status,
     },
     null,
