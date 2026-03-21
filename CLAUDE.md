@@ -87,7 +87,10 @@ UMA Optimistic Oracle V3 on Base is the on-chain truth layer.
 - UMA OOv3 Base Sepolia: `0x0F7fC5E6482f096380db6158f978167b57388deE`
 
 ### Hackathon Scope
-Full end-to-end flow. Counterparty pre-seeded via agent wallet. Factory deployed at `0x835a91497987D21F8Cb92336190BC99Cc90908F7` on Base Sepolia.
+Full end-to-end flow. Counterparty pre-seeded via agent wallet.
+- Factory: `0x835a91497987D21F8Cb92336190BC99Cc90908F7` (Base Sepolia)
+- Latest clean escrow: `0x9b1FadF45efF6d84b7C988bCF7eE8fb06ccb0fdc` (Funded, 2 USDC, deadline March 28 2026)
+- Agent IDs: Market Maker 4005, Matchmaker 4006, Deployer 4007, Resolution 4008
 
 ### Counterparty Discovery
 Combine active matchmaking + agent counterparty:
@@ -115,3 +118,6 @@ Non-custodial P2P infrastructure. Avoid sports/elections content without legal r
 - **Workflow task bodies**: Must include explicit tool-call instructions (e.g., "You MUST call the X tool"). Without this, the platform LLM answers tasks directly instead of invoking agent capabilities.
 - **`.openserv.json` cwd**: Agents write to project root (via `start-all.ts` cwd), but `setup-workflow.ts` reads from its own cwd. Always run `setup-workflow.ts` from the project root.
 - **Nonce race on retry**: The platform LLM may retry blockchain tool calls, causing nonce conflicts. Task bodies should say "call EXACTLY ONCE" for on-chain operations.
+- **RPC allowance propagation**: Base Sepolia public RPC can lag — `approve()` receipt returns but `transferFrom()` sees stale allowance. `deposit()` in `blockchain.ts` polls allowance before calling the escrow's `deposit()`.
+- **Deployment mutex**: Contract Deployer uses an in-memory `deployInProgress` flag to block concurrent `deploy-escrow` calls. Platform retries are rejected immediately instead of causing nonce races.
+- **USDC pre-flight check**: Contract Deployer checks both wallets' USDC balances before deploying. Fails fast with the wallet address and shortfall instead of wasting gas on a doomed deployment.

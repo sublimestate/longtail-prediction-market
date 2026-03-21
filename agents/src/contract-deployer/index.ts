@@ -6,13 +6,17 @@ import {
   createEscrow,
   deposit,
   getEscrowState,
+  getUsdcBalance,
   deployerWallet,
   counterpartyWallet,
   getDeployerAddress,
   getCounterpartyAddress,
 } from '../shared/blockchain.js';
 import { parsePredictionSpec, type PredictionSpec } from '../shared/types.js';
-import type { Address } from 'viem';
+import { type Address, formatUnits } from 'viem';
+
+// Mutex: prevent concurrent deployments (platform LLM may retry the tool)
+let deployInProgress = false;
 
 const agent = new Agent({
   systemPrompt: `You are the Contract Deployer agent for a long-tail prediction market. Your role is to:
@@ -32,6 +36,11 @@ agent.addCapability({
     prediction: z.string().describe('JSON string of the matched PredictionSpec'),
   }),
   async run({ args }) {
+    // Prevent concurrent deployments (nonce race from platform retries)
+    if (deployInProgress) {
+      return 'Error: A deployment is already in progress. Do NOT retry — wait for it to complete.';
+    }
+
     let spec: PredictionSpec;
     try {
       spec = parsePredictionSpec(args.prediction);
@@ -47,6 +56,29 @@ agent.addCapability({
       return 'Error: FACTORY_ADDRESS not set in environment. Deploy the factory contract first.';
     }
 
+    // Pre-flight: check USDC balances before spending gas
+    const deployerAddr = getDeployerAddress();
+    const counterpartyAddr = getCounterpartyAddress();
+    const { parseUnits } = await import('viem');
+    const requiredAmount = parseUnits(spec.stakeAmount, 6);
+
+    const needDeployerDeposit = spec.partyYes.address.toLowerCase() === deployerAddr.toLowerCase();
+    const needCounterpartyDeposit = spec.partyNo.address.toLowerCase() === counterpartyAddr.toLowerCase();
+
+    if (needDeployerDeposit) {
+      const balance = await getUsdcBalance(deployerAddr);
+      if (balance < requiredAmount) {
+        return `Error: Deployer wallet has insufficient USDC. Has ${formatUnits(balance, 6)}, needs ${spec.stakeAmount}. Fund ${deployerAddr} before retrying.`;
+      }
+    }
+    if (needCounterpartyDeposit) {
+      const balance = await getUsdcBalance(counterpartyAddr);
+      if (balance < requiredAmount) {
+        return `Error: Counterparty wallet has insufficient USDC. Has ${formatUnits(balance, 6)}, needs ${spec.stakeAmount}. Fund ${counterpartyAddr} before retrying.`;
+      }
+    }
+
+    deployInProgress = true;
     try {
       // 1. Deploy escrow via factory
       console.log('Deploying escrow contract...');
@@ -62,16 +94,14 @@ agent.addCapability({
       console.log(`Escrow deployed at: ${escrowAddress}`);
 
       // 2. Deposit from partyYes (deployer)
-      console.log('Depositing from partyYes...');
-      const deployerAddr = getDeployerAddress();
-      if (spec.partyYes.address.toLowerCase() === deployerAddr.toLowerCase()) {
+      if (needDeployerDeposit) {
+        console.log('Depositing from partyYes...');
         await deposit(escrowAddress, deployerWallet, spec.stakeAmount);
       }
 
       // 3. Deposit from partyNo (counterparty)
-      console.log('Depositing from partyNo...');
-      const counterpartyAddr = getCounterpartyAddress();
-      if (spec.partyNo.address.toLowerCase() === counterpartyAddr.toLowerCase()) {
+      if (needCounterpartyDeposit) {
+        console.log('Depositing from partyNo...');
         await deposit(escrowAddress, counterpartyWallet, spec.stakeAmount);
       }
 
@@ -93,6 +123,8 @@ agent.addCapability({
       )}\n\`\`\`\n\nForwarded to Resolution agent for monitoring.`;
     } catch (e) {
       return `Error deploying escrow: ${e}`;
+    } finally {
+      deployInProgress = false;
     }
   },
 });

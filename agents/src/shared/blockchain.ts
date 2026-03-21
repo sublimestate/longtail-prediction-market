@@ -125,6 +125,7 @@ export async function deposit(
 ): Promise<string> {
   const usdcAddress = config.contracts.usdcBaseSepolia;
   const stakeWei = parseUnits(stakeAmount, 6);
+  const depositor = wallet.account.address;
 
   // Approve USDC
   const approveHash = await wallet.writeContract({
@@ -135,6 +136,19 @@ export async function deposit(
     chain: baseSepolia,
   });
   await publicClient.waitForTransactionReceipt({ hash: approveHash });
+
+  // Wait for allowance to propagate on RPC (Base Sepolia public RPC can lag)
+  for (let i = 0; i < 5; i++) {
+    const allowance = await publicClient.readContract({
+      address: usdcAddress,
+      abi: erc20Abi,
+      functionName: 'allowance',
+      args: [depositor, escrowAddress],
+    });
+    if ((allowance as bigint) >= stakeWei) break;
+    console.log(`Waiting for allowance propagation (attempt ${i + 1}/5)...`);
+    await new Promise((r) => setTimeout(r, 2000));
+  }
 
   // Deposit
   const depositHash = await wallet.writeContract({
@@ -165,6 +179,16 @@ export async function initiateResolution(
 
   await publicClient.waitForTransactionReceipt({ hash });
   return hash;
+}
+
+export async function getUsdcBalance(address: Address): Promise<bigint> {
+  const balance = await publicClient.readContract({
+    address: config.contracts.usdcBaseSepolia,
+    abi: erc20Abi,
+    functionName: 'balanceOf',
+    args: [address],
+  });
+  return balance as bigint;
 }
 
 export async function getEscrowState(escrowAddress: Address): Promise<{
