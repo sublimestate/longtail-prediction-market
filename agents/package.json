@@ -10,7 +10,7 @@
     "matchmaker": "tsx src/matchmaker/index.ts",
     "deployer": "tsx src/contract-deployer/index.ts",
     "resolution": "tsx src/resolution/index.ts",
-    "jury-provision": "tsx src/jury/provision.ts"
+    "jury": "tsx src/jury/index.ts"
   },
   "dependencies": {
     "@openserv-labs/client": "^2.5.3",
