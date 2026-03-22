@@ -88,7 +88,7 @@ export default async function PredictionPage({
             <p className="text-white">{new Date(prediction.deadline * 1000).toLocaleDateString()}</p>
           </div>
           <div>
-            <span className="text-gray-500">Time Left</span>
+            <span className="text-gray-500">Resolution Window</span>
             <CountdownTimer targetTimestamp={prediction.deadline} />
           </div>
         </div>
