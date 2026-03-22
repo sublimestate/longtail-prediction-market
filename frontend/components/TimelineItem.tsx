@@ -36,7 +36,6 @@ export function TimelineItem({ prediction }: { prediction: Prediction }) {
           </div>
         </div>
         <div className="flex items-center gap-4 text-xs text-gray-400">
-          <span>{stakeAmount} USDC</span>
           <span className="font-mono">{truncateAddress(escrowAddress)}</span>
           {state === 'Settled' && (
             <span className="text-status-settled">Outcome: {resolvedYes ? 'YES' : 'NO'}</span>
@@ -50,6 +49,9 @@ export function TimelineItem({ prediction }: { prediction: Prediction }) {
           {state === 'Resolving' && (
             <span className="text-status-resolving">UMA dispute window active</span>
           )}
+          <span className="bg-navy-900 border border-navy-700 rounded-full px-2 py-0.5 text-xs text-gray-300 ml-auto">
+            {state === 'Created' ? `Stake: ${stakeAmount} USDC` : `Pool: ${parseFloat(stakeAmount) * 2} USDC`}
+          </span>
         </div>
       </Link>
     </div>

@@ -6,7 +6,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Prediction Market",
+  title: "Longtail",
   description: "Agent-powered P2P prediction market on Base",
 };
 
