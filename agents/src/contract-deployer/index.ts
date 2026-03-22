@@ -8,9 +8,7 @@ import {
   getEscrowState,
   getUsdcBalance,
   deployerWallet,
-  counterpartyWallet,
   getDeployerAddress,
-  getCounterpartyAddress,
 } from '../shared/blockchain.js';
 import { parsePredictionSpec, type PredictionSpec } from '../shared/types.js';
 import { type Address, formatUnits } from 'viem';
@@ -20,10 +18,10 @@ let deployInProgress = false;
 
 const agent = new Agent({
   systemPrompt: `You are the Contract Deployer agent for a long-tail prediction market. Your role is to:
-1. Deploy escrow contracts via the factory on Base
-2. Coordinate USDC approvals and deposits from both parties
-3. Verify the escrow reaches the Funded state
-4. Forward funded escrows to the Resolution agent
+1. Deploy open escrow contracts via the factory on Base (partyNo = address(0) for open matching)
+2. Deposit USDC from the creator (partyYes)
+3. The escrow stays in Created state until a counterparty matches on-chain
+4. Forward deployed escrows to the Resolution agent
 
 You never write or modify Solidity code — you only provide deployment parameters to the audited factory contract.`,
 });
@@ -48,79 +46,62 @@ agent.addCapability({
       return `Error: Invalid prediction JSON — ${e}`;
     }
 
-    if (!spec.partyYes?.address || !spec.partyNo?.address) {
-      return 'Error: Prediction must be matched with both parties before deploying escrow.';
-    }
-
     if (!process.env.FACTORY_ADDRESS) {
       return 'Error: FACTORY_ADDRESS not set in environment. Deploy the factory contract first.';
     }
 
-    // Pre-flight: check USDC balances before spending gas
+    // Use deployer wallet as partyYes; partyNo = address(0) for open matching
     const deployerAddr = getDeployerAddress();
-    const counterpartyAddr = getCounterpartyAddress();
+    const partyYesAddr = spec.partyYes?.address || deployerAddr;
+    const partyNoAddr = '0x0000000000000000000000000000000000000000'; // open for matching
+
+    // Pre-flight: check creator's USDC balance
     const { parseUnits } = await import('viem');
     const requiredAmount = parseUnits(spec.stakeAmount, 6);
 
-    const needDeployerDeposit = spec.partyYes.address.toLowerCase() === deployerAddr.toLowerCase();
-    const needCounterpartyDeposit = spec.partyNo.address.toLowerCase() === counterpartyAddr.toLowerCase();
-
-    if (needDeployerDeposit) {
+    if (partyYesAddr.toLowerCase() === deployerAddr.toLowerCase()) {
       const balance = await getUsdcBalance(deployerAddr);
       if (balance < requiredAmount) {
         return `Error: Deployer wallet has insufficient USDC. Has ${formatUnits(balance, 6)}, needs ${spec.stakeAmount}. Fund ${deployerAddr} before retrying.`;
       }
     }
-    if (needCounterpartyDeposit) {
-      const balance = await getUsdcBalance(counterpartyAddr);
-      if (balance < requiredAmount) {
-        return `Error: Counterparty wallet has insufficient USDC. Has ${formatUnits(balance, 6)}, needs ${spec.stakeAmount}. Fund ${counterpartyAddr} before retrying.`;
-      }
-    }
 
     deployInProgress = true;
     try {
-      // 1. Deploy escrow via factory
-      console.log('Deploying escrow contract...');
+      // 1. Deploy open escrow via factory (partyNo = address(0))
+      console.log('Deploying open escrow contract...');
       const escrowAddress = await createEscrow(
-        spec.partyYes.address as Address,
-        spec.partyNo.address as Address,
+        partyYesAddr as Address,
+        partyNoAddr as Address,
         spec.stakeAmount,
         spec.deadline,
         spec.description,
       );
 
       spec.escrowAddress = escrowAddress;
-      console.log(`Escrow deployed at: ${escrowAddress}`);
+      console.log(`Open escrow deployed at: ${escrowAddress}`);
 
-      // 2. Deposit from partyYes (deployer)
-      if (needDeployerDeposit) {
-        console.log('Depositing from partyYes...');
+      // 2. Deposit from partyYes (creator)
+      if (partyYesAddr.toLowerCase() === deployerAddr.toLowerCase()) {
+        console.log('Depositing from creator (partyYes)...');
         await deposit(escrowAddress, deployerWallet, spec.stakeAmount);
       }
 
-      // 3. Deposit from partyNo (counterparty)
-      if (needCounterpartyDeposit) {
-        console.log('Depositing from partyNo...');
-        await deposit(escrowAddress, counterpartyWallet, spec.stakeAmount);
-      }
-
-      // 4. Verify funded state
+      // 3. Verify state — stays Created until a counterparty matches
       const state = await getEscrowState(escrowAddress);
-      spec.status = state.state === 'Funded' ? 'funded' : spec.status;
 
-      return `Escrow deployed and funded successfully:\n\`\`\`json\n${JSON.stringify(
+      return `Open escrow deployed successfully:\n\`\`\`json\n${JSON.stringify(
         {
           escrowAddress,
-          partyYes: spec.partyYes.address,
-          partyNo: spec.partyNo.address,
+          partyYes: partyYesAddr,
+          partyNo: 'open — waiting for counterparty to match',
           stakeAmount: spec.stakeAmount,
           state: state.state,
           deadline: spec.deadline > 0 ? new Date(spec.deadline * 1000).toISOString() : 'unknown',
         },
         null,
         2,
-      )}\n\`\`\`\n\nForwarded to Resolution agent for monitoring.`;
+      )}\n\`\`\`\n\nEscrow is open for matching. Anyone can deposit to claim the NO side.`;
     } catch (e) {
       return `Error deploying escrow: ${e}`;
     } finally {

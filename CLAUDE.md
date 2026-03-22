@@ -13,7 +13,7 @@ cd contracts && npx hardhat test      # Run contract tests
 cd contracts && npx hardhat run scripts/deploy.ts --network baseSepolia  # Deploy factory
 
 # Agents
-cd agents && npm run start            # Start all 4 agents (auto-provisions on first run)
+cd agents && npm run start            # Start all 3 agents (auto-provisions on first run)
 npx tsx agents/src/setup-workflow.ts  # Create pipeline workflow (run from project root!)
 cd agents && npx tsc --noEmit         # Type-check agent code
 cd agents && npx vitest run           # Run agent tests
@@ -39,7 +39,7 @@ Monorepo with three npm workspaces:
 ## Environment
 
 Required in `.env`:
-- `DEPLOYER_PRIVATE_KEY`, `COUNTERPARTY_PRIVATE_KEY`
+- `DEPLOYER_PRIVATE_KEY`
 - `FACTORY_ADDRESS` (set after deploying EscrowFactory)
 
 Required in `frontend/.env.local`:
@@ -59,18 +59,18 @@ Hackathon URL: https://synthesis.md/
 
 ## Agent Architecture
 
-4 agents form a pipeline: **Market Maker** (structures predictions) → **Matchmaker** (finds counterparty or assigns agent wallet) → **Contract Deployer** (deploys escrow via factory, never writes Solidity) → **Resolution** (3-member LLM jury, submits UMA claim, settles after liveness).
+3 agents form a pipeline: **Market Maker** (structures predictions) → **Contract Deployer** (deploys open escrow via factory with partyNo=address(0), deposits creator's USDC) → **Resolution** (3-member LLM jury, submits UMA claim, settles after liveness). Counterparty matching happens on-chain — any user/agent can call `deposit()` on an open escrow to claim the NO side.
 
 ### Agent Provisioning
 - All agents self-provision on first start via `provision()` from `@openserv-labs/client`
 - Resolution jury uses `generate()` for platform-delegated LLM calls (no OpenAI key needed)
-- `setup-workflow.ts` creates the unified pipeline: Webhook → Market Maker → Matchmaker → Deployer → Resolution
+- `setup-workflow.ts` creates the unified pipeline: Webhook → Market Maker → Deployer → Resolution
 - Agent IDs and credentials stored in `.openserv.json` (gitignored)
 
 ## Gotchas
 
 - **UMA does not auto-settle**: After `initiateResolution()`, someone must call `settle-assertion` on the resolution agent after the 2hr liveness window. Without this, the escrow stays in "Resolving" forever and funds remain locked.
-- **SIWE race condition**: Starting all 4 agents simultaneously causes wallet auth failures. `start-all.ts` staggers starts by 8 seconds.
+- **SIWE race condition**: Starting all 3 agents simultaneously causes wallet auth failures. `start-all.ts` staggers starts by 8 seconds.
 - **`.openserv.json` state**: `provision()` stores agent IDs/credentials here. `getProvisionedInfo()` requires the exact workflow name as the second argument.
 - **`generate()` fallback**: Resolution jury uses `generate()` for LLM calls but falls back to deterministic logic if it fails (e.g., demo Trump prediction always returns YES).
 - **Escrow deadline**: Must be in the future at deployment time, even if the prediction evaluates a past event.
@@ -79,4 +79,5 @@ Hackathon URL: https://synthesis.md/
 - **Nonce race on retry**: The platform LLM may retry blockchain tool calls, causing nonce conflicts. Task bodies should say "call EXACTLY ONCE" for on-chain operations.
 - **RPC allowance propagation**: Base Sepolia public RPC can lag — `approve()` receipt returns but `transferFrom()` sees stale allowance. `deposit()` in `blockchain.ts` polls allowance before calling the escrow's `deposit()`.
 - **Deployment mutex**: Contract Deployer uses an in-memory `deployInProgress` flag to block concurrent `deploy-escrow` calls. Platform retries are rejected immediately instead of causing nonce races.
-- **USDC pre-flight check**: Contract Deployer checks both wallets' USDC balances before deploying. Fails fast with the wallet address and shortfall instead of wasting gas on a doomed deployment.
+- **USDC pre-flight check**: Contract Deployer checks the creator wallet's USDC balance before deploying. Fails fast with the wallet address and shortfall instead of wasting gas on a doomed deployment.
+- **Open matching**: Escrows deploy with `partyNo = address(0)`. Any wallet can call `deposit()` to claim the NO side. The frontend shows "Match & Fund" for open predictions.

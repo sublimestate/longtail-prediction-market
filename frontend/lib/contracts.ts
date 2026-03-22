@@ -24,6 +24,8 @@ const predictionEscrowAbi = parseAbi([
   'function description() external view returns (string)',
   'function assertionId() external view returns (bytes32)',
   'function resolvedYes() external view returns (bool)',
+  'function partyYesDeposited() external view returns (bool)',
+  'function partyNoDeposited() external view returns (bool)',
 ]);
 
 function getClient() {
@@ -41,7 +43,7 @@ function getFactoryAddress(): Address {
 
 export async function getEscrowState(escrowAddress: Address): Promise<Prediction> {
   const client = getClient();
-  const [state, partyYes, partyNo, stakeAmount, deadline, description, assertionId, resolvedYes] =
+  const [state, partyYes, partyNo, stakeAmount, deadline, description, assertionId, resolvedYes, partyYesDeposited, partyNoDeposited] =
     await Promise.all([
       client.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'state' }),
       client.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'partyYes' }),
@@ -51,6 +53,8 @@ export async function getEscrowState(escrowAddress: Address): Promise<Prediction
       client.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'description' }),
       client.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'assertionId' }),
       client.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'resolvedYes' }),
+      client.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'partyYesDeposited' }),
+      client.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'partyNoDeposited' }),
     ]);
 
   return {
@@ -61,6 +65,8 @@ export async function getEscrowState(escrowAddress: Address): Promise<Prediction
     deadline: Number(deadline),
     partyYes: partyYes as string,
     partyNo: partyNo as string,
+    partyYesDeposited: partyYesDeposited as boolean,
+    partyNoDeposited: partyNoDeposited as boolean,
     assertionId: assertionId as string,
     resolvedYes: resolvedYes as boolean,
   };
@@ -69,6 +75,7 @@ export async function getEscrowState(escrowAddress: Address): Promise<Prediction
 const ESCROW_FIELDS = [
   'state', 'partyYes', 'partyNo', 'stakeAmount',
   'deadline', 'description', 'assertionId', 'resolvedYes',
+  'partyYesDeposited', 'partyNoDeposited',
 ] as const;
 
 export async function getAllPredictions(): Promise<Prediction[]> {
@@ -127,6 +134,8 @@ export async function getAllPredictions(): Promise<Prediction[]> {
       description: vals[5].result as string,
       assertionId: vals[6].result as string,
       resolvedYes: vals[7].result as boolean,
+      partyYesDeposited: vals[8].result as boolean,
+      partyNoDeposited: vals[9].result as boolean,
     });
   }
 

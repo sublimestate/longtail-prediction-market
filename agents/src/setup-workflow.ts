@@ -1,11 +1,11 @@
 /**
  * Sets up the multi-agent prediction market workflow on OpenServ.
  *
- * Run AFTER all 4 agents have been provisioned at least once:
+ * Run AFTER all 3 agents have been provisioned at least once:
  *   npx tsx src/setup-workflow.ts
  *
  * Creates a unified workflow:
- *   Webhook → Market Maker → Matchmaker → Contract Deployer → Resolution
+ *   Webhook → Market Maker → Contract Deployer → Resolution
  */
 import 'dotenv/config';
 import { PlatformClient, triggers, getProvisionedInfo } from '@openserv-labs/client';
@@ -14,15 +14,13 @@ async function setup() {
   // Read agent IDs from provision state (.openserv.json)
   // getProvisionedInfo requires the exact workflow name as the second arg
   const marketMaker = getProvisionedInfo('prediction-market-maker', 'Prediction Market Maker');
-  const matchmaker = getProvisionedInfo('prediction-matchmaker', 'Prediction Matchmaker');
   const deployer = getProvisionedInfo('prediction-deployer', 'Prediction Contract Deployer');
   const resolution = getProvisionedInfo('prediction-resolution', 'Prediction Resolution Oracle');
 
-  if (!marketMaker?.agentId || !matchmaker?.agentId || !deployer?.agentId || !resolution?.agentId) {
+  if (!marketMaker?.agentId || !deployer?.agentId || !resolution?.agentId) {
     console.error('Not all agents are provisioned. Start each agent once first to register them.');
     console.error('  Status:', {
       marketMaker: marketMaker?.agentId ?? 'missing',
-      matchmaker: matchmaker?.agentId ?? 'missing',
       deployer: deployer?.agentId ?? 'missing',
       resolution: resolution?.agentId ?? 'missing',
     });
@@ -31,7 +29,6 @@ async function setup() {
 
   console.log('Agent IDs:', {
     marketMaker: marketMaker.agentId,
-    matchmaker: matchmaker.agentId,
     deployer: deployer.agentId,
     resolution: resolution.agentId,
   });
@@ -50,7 +47,7 @@ async function setup() {
   const workflow = await client.workflows.create({
     name: 'Prediction Market Pipeline',
     goal: 'End-to-end prediction market: accept a natural language prediction, match with a counterparty, deploy an escrow contract on Base with USDC deposits, and resolve the outcome via a multi-agent jury submitting to UMA Optimistic Oracle.',
-    agentIds: [marketMaker.agentId, matchmaker.agentId, deployer.agentId, resolution.agentId],
+    agentIds: [marketMaker.agentId, deployer.agentId, resolution.agentId],
     triggers: [
       triggers.webhook({
         name: 'webhook',
@@ -84,16 +81,10 @@ async function setup() {
         input: '{{trigger.prediction}}',
       },
       {
-        name: 'match-counterparty',
-        agentId: matchmaker.agentId,
-        description: 'Find counterparty for prediction',
-        body: 'You MUST call the match-prediction tool. Pass the previous task output as the prediction argument (as a JSON string). The tool will return the matched prediction with Ethereum addresses for partyYes and partyNo. Return the tool output verbatim.',
-      },
-      {
         name: 'deploy-escrow',
         agentId: deployer.agentId,
-        description: 'Deploy escrow and coordinate deposits',
-        body: 'You MUST call the deploy-escrow tool EXACTLY ONCE. Pass the previous task output as the prediction argument (as a JSON string). The tool deploys the escrow contract on Base, deposits USDC from both parties, and verifies funded state. Do NOT retry if it fails. Return the tool output verbatim.',
+        description: 'Deploy open escrow for matching',
+        body: 'You MUST call the deploy-escrow tool EXACTLY ONCE. Pass the previous task output as the prediction argument (as a JSON string). The tool deploys an open escrow contract on Base (partyNo=address(0)) and deposits USDC from the creator. Anyone can then match by depositing on-chain. Do NOT retry if it fails. Return the tool output verbatim.',
       },
       {
         name: 'resolve-outcome',
@@ -104,8 +95,7 @@ async function setup() {
     ],
     edges: [
       { from: 'trigger:webhook', to: 'task:create-prediction' },
-      { from: 'task:create-prediction', to: 'task:match-counterparty' },
-      { from: 'task:match-counterparty', to: 'task:deploy-escrow' },
+      { from: 'task:create-prediction', to: 'task:deploy-escrow' },
       { from: 'task:deploy-escrow', to: 'task:resolve-outcome' },
     ],
   });
@@ -119,7 +109,7 @@ async function setup() {
   console.log('Prediction Market Pipeline — Setup Complete');
   console.log('========================================');
   console.log(`\nWorkflow ID: ${workflow.id}`);
-  console.log(`\nPipeline: Webhook → Market Maker → Matchmaker → Deployer → Resolution`);
+  console.log(`\nPipeline: Webhook → Market Maker → Deployer → Resolution`);
   console.log(`\nWebhook URL:`);
   console.log(`  POST https://api.openserv.ai/webhooks/trigger/${trigger.token}`);
   console.log(`\nExample:`);

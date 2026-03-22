@@ -6,7 +6,6 @@ dotenv.config({ path: resolve(import.meta.dirname, '../../.env') });
 
 const agents = [
   { name: 'Market Maker', path: 'src/market-maker/index.ts' },
-  { name: 'Matchmaker', path: 'src/matchmaker/index.ts' },
   { name: 'Contract Deployer', path: 'src/contract-deployer/index.ts' },
   { name: 'Resolution', path: 'src/resolution/index.ts' },
 ];

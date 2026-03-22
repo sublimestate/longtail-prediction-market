@@ -6,6 +6,7 @@ import { PipelineStepper } from '@/components/PipelineStepper';
 import { JuryCard } from '@/components/JuryCard';
 import { CountdownTimer } from '@/components/CountdownTimer';
 import { SettleButton } from '@/components/SettleButton';
+import { FundButton } from '@/components/FundButton';
 import { isAddress, type Address } from 'viem';
 
 export const dynamic = 'force-dynamic';
@@ -82,7 +83,11 @@ export default async function PredictionPage({
           </div>
           <div>
             <span className="text-gray-500">Party NO</span>
-            <p className="font-mono text-white">{truncateAddress(prediction.partyNo)}</p>
+            {prediction.partyNo === '0x0000000000000000000000000000000000000000' ? (
+              <p className="text-purple-400 font-medium">Open — anyone can match</p>
+            ) : (
+              <p className="font-mono text-white">{truncateAddress(prediction.partyNo)}</p>
+            )}
           </div>
           <div>
             <span className="text-gray-500">Deadline</span>
@@ -94,6 +99,29 @@ export default async function PredictionPage({
           </div>
         </div>
       </section>
+
+      {/* Funding Section — visible when Created */}
+      {prediction.state === 'Created' && (
+        <section className="bg-navy-800 border border-purple-500/30 rounded-lg p-4 mb-4">
+          <h2 className="text-sm font-semibold text-purple-400 uppercase mb-3">Fund This Prediction</h2>
+          <div className="text-sm space-y-1">
+            <p className="text-gray-400">
+              Party YES ({truncateAddress(prediction.partyYes)}): {prediction.partyYesDeposited ? <span className="text-status-settled">Deposited</span> : <span className="text-yellow-400">Awaiting deposit</span>}
+            </p>
+            <p className="text-gray-400">
+              Party NO ({prediction.partyNo === '0x0000000000000000000000000000000000000000' ? 'Open' : truncateAddress(prediction.partyNo)}): {prediction.partyNoDeposited ? <span className="text-status-settled">Deposited</span> : <span className="text-yellow-400">Awaiting deposit</span>}
+            </p>
+          </div>
+          <FundButton
+            escrowAddress={address}
+            stakeAmount={prediction.stakeAmount}
+            partyYes={prediction.partyYes}
+            partyNo={prediction.partyNo}
+            partyYesDeposited={prediction.partyYesDeposited}
+            partyNoDeposited={prediction.partyNoDeposited}
+          />
+        </section>
+      )}
 
       {/* UMA Section — visible when Resolving */}
       {prediction.state === 'Resolving' && prediction.assertionId !== ZERO_ASSERTION && (

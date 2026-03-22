@@ -31,7 +31,7 @@ contract PredictionEscrow is ReentrancyGuard {
     enum State { Created, Funded, Resolving, Settled, Expired }
 
     address public immutable partyYes;
-    address public immutable partyNo;
+    address public partyNo;
     uint256 public immutable stakeAmount;
     uint256 public immutable deadline;
     string public description;
@@ -51,6 +51,7 @@ contract PredictionEscrow is ReentrancyGuard {
     uint64 public constant LIVENESS = 7200; // 2 hours
 
     event Deposited(address indexed party, uint256 amount);
+    event Matched(address indexed newPartyNo);
     event ResolutionInitiated(bytes32 indexed assertionId, bool proposedOutcome);
     event Settled(bool resolvedYes, address winner);
     event Expired();
@@ -70,7 +71,7 @@ contract PredictionEscrow is ReentrancyGuard {
         address _oo,
         address _currency
     ) {
-        require(_partyYes != address(0) && _partyNo != address(0), "Invalid parties");
+        require(_partyYes != address(0), "Invalid partyYes");
         require(_partyYes != _partyNo, "Same party");
         require(_stakeAmount > 0, "Zero stake");
         require(_deadline > block.timestamp, "Deadline passed");
@@ -86,17 +87,19 @@ contract PredictionEscrow is ReentrancyGuard {
     }
 
     function deposit() external nonReentrant onlyState(State.Created) {
-        require(
-            msg.sender == partyYes || msg.sender == partyNo,
-            "Not a party"
-        );
-
         if (msg.sender == partyYes) {
             require(!partyYesDeposited, "Already deposited");
             partyYesDeposited = true;
-        } else {
+        } else if (msg.sender == partyNo) {
             require(!partyNoDeposited, "Already deposited");
             partyNoDeposited = true;
+        } else if (partyNo == address(0)) {
+            // Open prediction — anyone can claim the NO side
+            partyNo = msg.sender;
+            partyNoDeposited = true;
+            emit Matched(msg.sender);
+        } else {
+            revert("Not a party");
         }
 
         currency.safeTransferFrom(msg.sender, address(this), stakeAmount);

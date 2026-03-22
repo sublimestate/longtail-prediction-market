@@ -15,6 +15,8 @@ export interface Prediction {
   deadline: number;
   partyYes: string;
   partyNo: string;
+  partyYesDeposited: boolean;
+  partyNoDeposited: boolean;
   assertionId: string;
   resolvedYes: boolean;
   juryVotes?: JuryVote[];
