@@ -66,6 +66,11 @@ export async function getEscrowState(escrowAddress: Address): Promise<Prediction
   };
 }
 
+const ESCROW_FIELDS = [
+  'state', 'partyYes', 'partyNo', 'stakeAmount',
+  'deadline', 'description', 'assertionId', 'resolvedYes',
+] as const;
+
 export async function getAllPredictions(): Promise<Prediction[]> {
   const client = getClient();
   const factory = getFactoryAddress();
@@ -79,20 +84,51 @@ export async function getAllPredictions(): Promise<Prediction[]> {
   const n = Number(count);
   if (n === 0) return [];
 
-  const addresses = await Promise.all(
-    Array.from({ length: n }, (_, i) =>
-      client.readContract({
-        address: factory,
-        abi: escrowFactoryAbi,
-        functionName: 'getEscrow',
-        args: [BigInt(i)],
-      })
-    )
-  );
+  // Batch all address lookups into one multicall
+  const addressResults = await client.multicall({
+    contracts: Array.from({ length: n }, (_, i) => ({
+      address: factory,
+      abi: escrowFactoryAbi,
+      functionName: 'getEscrow' as const,
+      args: [BigInt(i)],
+    })),
+  });
 
-  const predictions = await Promise.all(
-    addresses.map((addr) => getEscrowState(addr as Address))
-  );
+  const addresses = addressResults
+    .filter((r) => r.status === 'success')
+    .map((r) => r.result as Address);
+
+  if (addresses.length === 0) return [];
+
+  // Batch all escrow state reads into one multicall (8 fields per escrow)
+  const stateResults = await client.multicall({
+    contracts: addresses.flatMap((addr) =>
+      ESCROW_FIELDS.map((fn) => ({
+        address: addr,
+        abi: predictionEscrowAbi,
+        functionName: fn,
+      }))
+    ),
+  });
+
+  const predictions: Prediction[] = [];
+  for (let i = 0; i < addresses.length; i++) {
+    const offset = i * ESCROW_FIELDS.length;
+    const vals = stateResults.slice(offset, offset + ESCROW_FIELDS.length);
+    if (vals.some((v) => v.status === 'failure')) continue;
+
+    predictions.push({
+      escrowAddress: addresses[i],
+      state: ESCROW_STATE_MAP[vals[0].result as number] || 'Created',
+      partyYes: vals[1].result as string,
+      partyNo: vals[2].result as string,
+      stakeAmount: formatUnits(vals[3].result as bigint, 6),
+      deadline: Number(vals[4].result),
+      description: vals[5].result as string,
+      assertionId: vals[6].result as string,
+      resolvedYes: vals[7].result as boolean,
+    });
+  }
 
   return predictions;
 }
