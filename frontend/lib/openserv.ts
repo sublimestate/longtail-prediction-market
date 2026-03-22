@@ -45,7 +45,7 @@ export async function getAgentMetadata(escrowAddress: string): Promise<AgentMeta
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        'x-openserv-key': apiKey,
       },
       body: JSON.stringify({ query: escrowAddress }),
     });

@@ -9,6 +9,7 @@ import { SettleButton } from '@/components/SettleButton';
 import { SettleJuryButton } from '@/components/SettleJuryButton';
 import { ChallengeJuryButton } from '@/components/ChallengeJuryButton';
 import { FundButton } from '@/components/FundButton';
+import { ResolveButton } from '@/components/ResolveButton';
 import { isAddress, type Address } from 'viem';
 
 export const dynamic = 'force-dynamic';
@@ -165,6 +166,17 @@ export default async function PredictionPage({
             partyYesDeposited={prediction.partyYesDeposited}
             partyNoDeposited={prediction.partyNoDeposited}
           />
+        </section>
+      )}
+
+      {/* Resolution Section — visible when Funded and deadline passed */}
+      {prediction.state === 'Funded' && prediction.deadline < Math.floor(Date.now() / 1000) && (
+        <section className="bg-navy-800 border border-purple-500/30 rounded-lg p-4 mb-4">
+          <h2 className="text-sm font-semibold text-purple-400 uppercase mb-3">Resolution</h2>
+          <p className="text-sm text-gray-400">
+            Deadline has passed. Request the AI jury to evaluate this prediction and submit a resolution on-chain.
+          </p>
+          <ResolveButton escrowAddress={address} />
         </section>
       )}
 
