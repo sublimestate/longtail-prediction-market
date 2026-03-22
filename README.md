@@ -80,6 +80,16 @@ User → Frontend → /api/predict → OpenServ Webhook
 - **Oracle:** UMA Optimistic Oracle v3 (dispute fallback)
 - **Token:** USDC on Base Sepolia
 
+## Contract Addresses (Base Sepolia)
+
+| Contract | Address |
+|----------|---------|
+| EscrowFactory | [`0xe6d97155DB6e01De84148F4009dE1F986612a97B`](https://sepolia.basescan.org/address/0xe6d97155DB6e01De84148F4009dE1F986612a97B) |
+| USDC | [`0x036CbD53842c5426634e7929541eC2318f3dCF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e) |
+| UMA Optimistic Oracle v3 | [`0x0F7fC5E6482f096380db6158f978167b57388deE`](https://sepolia.basescan.org/address/0x0F7fC5E6482f096380db6158f978167b57388deE) |
+
+Individual `PredictionEscrow` contracts are deployed per prediction via the factory.
+
 ## Built For
 
 [The Synthesis](https://synthesis.md/) hackathon — Ship Something Real with OpenServ

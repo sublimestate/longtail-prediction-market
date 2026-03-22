@@ -38,6 +38,16 @@ Required in `frontend/.env.local`:
 - `WEBHOOK_TOKEN`, `OPENSERV_API_KEY`, `OPENSERV_USER_API_KEY`
 - `OPENAI_API_KEY`
 
+## Contract Addresses (Base Sepolia)
+
+| Contract | Address |
+|----------|---------|
+| EscrowFactory | `0xe6d97155DB6e01De84148F4009dE1F986612a97B` |
+| USDC | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
+| UMA Optimistic Oracle v3 | `0x0F7fC5E6482f096380db6158f978167b57388deE` |
+
+Each prediction deploys its own `PredictionEscrow` proxy via the factory.
+
 ## Gotchas
 
 - Workflow task bodies must include explicit tool-call instructions ("You MUST call the X tool") or the platform LLM answers directly instead of invoking agent capabilities.
