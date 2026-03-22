@@ -11,3 +11,10 @@ ignition/deployments/
 agents/.openserv.json
 agents/.agents/
 agents/.claude/
+
+# Local/sensitive files
+test-e2e.ts
+conversation-log.md
+submit-draft.sh
+.superpowers/
+.claude/settings.json

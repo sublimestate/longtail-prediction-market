@@ -3,8 +3,8 @@ import { getEscrowState } from '@/lib/contracts';
 import { isAddress, type Address } from 'viem';
 
 const OPENSERV_API = 'https://api.openserv.ai';
-const RESOLUTION_AGENT_ID = 4032;
-const RESOLUTION_WORKSPACE_ID = 13042;
+const RESOLUTION_AGENT_ID = Number(process.env.RESOLUTION_AGENT_ID || '4032');
+const RESOLUTION_WORKSPACE_ID = Number(process.env.RESOLUTION_WORKSPACE_ID || '13042');
 
 export async function POST(request: Request) {
   try {
