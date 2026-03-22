@@ -98,7 +98,10 @@ async function main() {
   });
 
   console.log(`Market Maker provisioned (agent ID: ${result.agentId})`);
-  await run(agent);
+  const runResult = await run(agent);
+
+  const { startKeepAlive } = await import('../shared/keepalive.js');
+  startKeepAlive(runResult, 'Market Maker');
 }
 
 main().catch(console.error);

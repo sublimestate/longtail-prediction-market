@@ -49,7 +49,7 @@ export function NewPredictionModal({ open, onClose }: { open: boolean; onClose: 
         body: JSON.stringify({
           prediction,
           stakeAmount,
-          deadline: deadline || undefined,
+          deadline: deadline ? new Date(deadline).toISOString() : undefined,
           challengeWindow: resolution === 'jury' ? parseInt(challengeWindow) * 60 : 300,
         }),
       });

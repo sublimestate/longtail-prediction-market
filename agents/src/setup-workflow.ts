@@ -117,6 +117,120 @@ async function setup() {
   console.log(`    -H "Content-Type: application/json" \\`);
   console.log(`    -d '{"prediction": "Donald Trump is still President as of March 21, 2026", "stakeAmount": "1"}'`);
   console.log('========================================');
+
+  // --- Jury Resolution Pipeline ---
+  // Read jury agent IDs from .openserv.json (provisioned via jury-provision script)
+  const skeptic = getProvisionedInfo('prediction-jury-skeptic', 'Prediction Jury Skeptic');
+  const optimist = getProvisionedInfo('prediction-jury-optimist', 'Prediction Jury Optimist');
+  const arbiter = getProvisionedInfo('prediction-jury-arbiter', 'Prediction Jury Arbiter');
+
+  if (!skeptic?.agentId || !optimist?.agentId || !arbiter?.agentId) {
+    console.warn('\nJury agents not provisioned yet. Skipping Jury Resolution Pipeline.');
+    console.warn('Run `npm run jury-provision` first, then re-run setup-workflow.');
+    return;
+  }
+
+  console.log('\nJury Agent IDs:', {
+    skeptic: skeptic.agentId,
+    optimist: optimist.agentId,
+    arbiter: arbiter.agentId,
+    resolution: resolution.agentId,
+  });
+
+  const juryWorkflow = await client.workflows.create({
+    name: 'Jury Resolution Pipeline',
+    goal: 'Run a 3-member jury (skeptic, optimist, arbiter) to evaluate a funded prediction, then tally votes and submit the majority outcome on-chain via resolveByJury().',
+    agentIds: [skeptic.agentId, optimist.agentId, arbiter.agentId, resolution.agentId],
+    triggers: [
+      triggers.webhook({
+        name: 'jury-webhook',
+        waitForCompletion: false,
+        timeout: 300,
+        input: {
+          escrowAddress: {
+            type: 'string',
+            title: 'Escrow Address',
+            description: 'The escrow contract address to resolve',
+          },
+          description: {
+            type: 'string',
+            title: 'Description',
+            description: 'The prediction description',
+          },
+          deadline: {
+            type: 'string',
+            title: 'Deadline',
+            description: 'Prediction deadline as ISO date string',
+          },
+        },
+      }),
+    ],
+    tasks: [
+      {
+        name: 'jury-skeptic',
+        agentId: skeptic.agentId,
+        description: 'Skeptical jury evaluation',
+        body: `You are a SKEPTICAL analyst evaluating a prediction for a 3-member jury. Look for reasons the prediction might be FALSE. Be thorough.
+
+Prediction: "{{trigger.description}}"
+Deadline: {{trigger.deadline}}
+Escrow: {{trigger.escrowAddress}}
+
+Respond with ONLY this JSON (no markdown, no explanation):
+{"escrowAddress":"{{trigger.escrowAddress}}","description":"{{trigger.description}}","deadline":"{{trigger.deadline}}","votes":[{"perspective":"skeptic","vote":true_or_false,"reasoning":"your detailed reasoning"}]}
+
+vote=true means the prediction IS true. vote=false means FALSE.`,
+        input: '{{trigger.escrowAddress}}',
+      },
+      {
+        name: 'jury-optimist',
+        agentId: optimist.agentId,
+        description: 'Optimistic jury evaluation',
+        body: `You are an OPTIMISTIC analyst on a 3-member jury. Look for strong evidence the prediction is TRUE.
+
+The previous task output is a JSON with prediction details and 1 existing vote. Parse it.
+Add YOUR vote with perspective "optimist". Keep existing votes unchanged.
+Respond with ONLY the updated JSON (no markdown). Must contain escrowAddress, description, deadline, and votes array with both votes.`,
+      },
+      {
+        name: 'jury-arbiter',
+        agentId: arbiter.agentId,
+        description: 'Neutral arbiter evaluation',
+        body: `You are a NEUTRAL arbiter on a 3-member jury. Weigh both sides equally. Focus on verifiable sources.
+
+The previous task output has 2 existing votes. Parse it.
+Add YOUR vote with perspective "arbiter". Keep existing votes unchanged.
+Respond with ONLY the updated JSON (no markdown). Must contain all 3 votes.`,
+      },
+      {
+        name: 'tally-resolve',
+        agentId: resolution.agentId,
+        description: 'Tally jury votes and submit on-chain',
+        body: 'You MUST call the tally-and-resolve tool EXACTLY ONCE. Pass the previous task output as the context argument (as a JSON string). Do NOT retry if it fails. Return the tool output verbatim.',
+      },
+    ],
+    edges: [
+      { from: 'trigger:jury-webhook', to: 'task:jury-skeptic' },
+      { from: 'task:jury-skeptic', to: 'task:jury-optimist' },
+      { from: 'task:jury-optimist', to: 'task:jury-arbiter' },
+      { from: 'task:jury-arbiter', to: 'task:tally-resolve' },
+    ],
+  });
+
+  const juryTrigger = juryWorkflow.triggers[0];
+  await client.triggers.activate({ workflowId: juryWorkflow.id, id: juryTrigger.id });
+  await juryWorkflow.setRunning();
+
+  console.log('\n========================================');
+  console.log('Jury Resolution Pipeline — Setup Complete');
+  console.log('========================================');
+  console.log(`\nWorkflow ID: ${juryWorkflow.id}`);
+  console.log(`\nPipeline: Webhook → Skeptic → Optimist → Arbiter → Tally & Resolve`);
+  console.log(`\nJury Webhook Token (add to JURY_WEBHOOK_TOKEN):`);
+  console.log(`  ${juryTrigger.token}`);
+  console.log(`\nWebhook URL:`);
+  console.log(`  POST https://api.openserv.ai/webhooks/trigger/${juryTrigger.token}`);
+  console.log('========================================');
 }
 
 setup().catch((err) => {

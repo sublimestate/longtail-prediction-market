@@ -173,6 +173,32 @@ agent.addCapability({
 });
 
 agent.addCapability({
+  name: 'tally-and-resolve',
+  description:
+    'Tallies jury votes from 3 jury agents and submits the majority outcome on-chain via resolveByJury(). Input is the accumulated jury JSON from the jury chain.',
+  schema: z.object({
+    context: z.string().describe('JSON string with escrowAddress and votes array from jury agent chain'),
+  }),
+  async run({ args }) {
+    const data = JSON.parse(args.context);
+    const yesVotes = data.votes.filter((v: any) => v.vote === true).length;
+    const outcome = yesVotes >= 2;
+    const txHash = await resolveByJury(data.escrowAddress as Address, outcome);
+    return `Jury resolution submitted:\n\`\`\`json\n${JSON.stringify(
+      {
+        escrowAddress: data.escrowAddress,
+        outcome: outcome ? 'YES' : 'NO',
+        yesVotes,
+        votes: data.votes,
+        txHash,
+      },
+      null,
+      2,
+    )}\n\`\`\``;
+  },
+});
+
+agent.addCapability({
   name: 'check-resolution-status',
   description:
     'Checks the resolution status of a prediction escrow. Input is the escrow address.',
@@ -339,7 +365,10 @@ async function main() {
   });
 
   console.log(`Resolution agent provisioned (agent ID: ${result.agentId})`);
-  await run(agent);
+  const runResult = await run(agent);
+
+  const { startKeepAlive } = await import('../shared/keepalive.js');
+  startKeepAlive(runResult, 'Resolution');
 }
 
 main().catch(console.error);

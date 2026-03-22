@@ -159,7 +159,10 @@ async function main() {
   });
 
   console.log(`Contract Deployer provisioned (agent ID: ${result.agentId})`);
-  await run(agent);
+  const runResult = await run(agent);
+
+  const { startKeepAlive } = await import('../shared/keepalive.js');
+  startKeepAlive(runResult, 'Contract Deployer');
 }
 
 main().catch(console.error);
