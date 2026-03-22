@@ -30,7 +30,8 @@ contract EscrowFactory {
         address partyNo,
         uint256 stakeAmount,
         uint256 deadline,
-        string calldata description
+        string calldata description,
+        uint64 challengeWindow
     ) external returns (address) {
         PredictionEscrow escrow = new PredictionEscrow(
             partyYes,
@@ -39,7 +40,8 @@ contract EscrowFactory {
             deadline,
             description,
             oo,
-            currency
+            currency,
+            challengeWindow
         );
 
         escrows.push(address(escrow));

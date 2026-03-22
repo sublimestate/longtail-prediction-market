@@ -6,6 +6,8 @@ import { PipelineStepper } from '@/components/PipelineStepper';
 import { JuryCard } from '@/components/JuryCard';
 import { CountdownTimer } from '@/components/CountdownTimer';
 import { SettleButton } from '@/components/SettleButton';
+import { SettleJuryButton } from '@/components/SettleJuryButton';
+import { ChallengeJuryButton } from '@/components/ChallengeJuryButton';
 import { FundButton } from '@/components/FundButton';
 import { isAddress, type Address } from 'viem';
 
@@ -91,7 +93,7 @@ export default async function PredictionPage({
           </div>
           <div>
             <span className="text-gray-500">Deadline</span>
-            <p className="text-white">{new Date(prediction.deadline * 1000).toLocaleDateString()}</p>
+            <p className="text-white">{new Date(prediction.deadline * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</p>
           </div>
           <div>
             <span className="text-gray-500">Resolution Window</span>
@@ -139,6 +141,32 @@ export default async function PredictionPage({
             </a>
             <p className="text-status-resolving text-xs mt-2">2hr liveness period active. Call settle-assertion after window closes.</p>
             <SettleButton assertionId={prediction.assertionId} escrowAddress={address} />
+          </div>
+        </section>
+      )}
+
+      {/* Jury Resolution Section — visible when JuryResolving */}
+      {prediction.state === 'JuryResolving' && (
+        <section className="bg-navy-800 border border-yellow-500/30 rounded-lg p-4 mb-4">
+          <h2 className="text-sm font-semibold text-yellow-400 uppercase mb-3">Jury Resolution</h2>
+          <div className="text-sm space-y-2">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Proposed Outcome</span>
+              <span className={`font-bold ${prediction.juryOutcomeYes ? 'text-status-settled' : 'text-red-400'}`}>
+                {prediction.juryOutcomeYes ? 'YES' : 'NO'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Challenge Window</span>
+              <CountdownTimer targetTimestamp={prediction.juryDeadline} />
+            </div>
+            <p className="text-yellow-400/80 text-xs mt-2">
+              Either party can challenge to escalate to UMA. If unchallenged, anyone can settle after the window expires.
+            </p>
+            <div className="flex gap-2 mt-2">
+              <ChallengeJuryButton escrowAddress={address} />
+              <SettleJuryButton escrowAddress={address} />
+            </div>
           </div>
         </section>
       )}

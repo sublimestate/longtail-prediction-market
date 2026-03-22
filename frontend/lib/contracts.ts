@@ -8,6 +8,7 @@ const ESCROW_STATE_MAP: Record<number, EscrowState> = {
   2: 'Resolving',
   3: 'Settled',
   4: 'Expired',
+  5: 'JuryResolving',
 };
 
 const escrowFactoryAbi = parseAbi([
@@ -21,11 +22,14 @@ const predictionEscrowAbi = parseAbi([
   'function partyNo() external view returns (address)',
   'function stakeAmount() external view returns (uint256)',
   'function deadline() external view returns (uint256)',
+  'function challengeWindow() external view returns (uint64)',
   'function description() external view returns (string)',
   'function assertionId() external view returns (bytes32)',
   'function resolvedYes() external view returns (bool)',
   'function partyYesDeposited() external view returns (bool)',
   'function partyNoDeposited() external view returns (bool)',
+  'function juryOutcomeYes() external view returns (bool)',
+  'function juryDeadline() external view returns (uint256)',
 ]);
 
 function getClient() {
@@ -43,18 +47,21 @@ function getFactoryAddress(): Address {
 
 export async function getEscrowState(escrowAddress: Address): Promise<Prediction> {
   const client = getClient();
-  const [state, partyYes, partyNo, stakeAmount, deadline, description, assertionId, resolvedYes, partyYesDeposited, partyNoDeposited] =
+  const [state, partyYes, partyNo, stakeAmount, deadline, challengeWindow, description, assertionId, resolvedYes, partyYesDeposited, partyNoDeposited, juryOutcomeYes, juryDeadline] =
     await Promise.all([
       client.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'state' }),
       client.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'partyYes' }),
       client.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'partyNo' }),
       client.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'stakeAmount' }),
       client.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'deadline' }),
+      client.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'challengeWindow' }),
       client.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'description' }),
       client.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'assertionId' }),
       client.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'resolvedYes' }),
       client.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'partyYesDeposited' }),
       client.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'partyNoDeposited' }),
+      client.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'juryOutcomeYes' }),
+      client.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'juryDeadline' }),
     ]);
 
   return {
@@ -63,19 +70,22 @@ export async function getEscrowState(escrowAddress: Address): Promise<Prediction
     state: ESCROW_STATE_MAP[state as number] || 'Created',
     stakeAmount: formatUnits(stakeAmount as bigint, 6),
     deadline: Number(deadline),
+    challengeWindow: Number(challengeWindow),
     partyYes: partyYes as string,
     partyNo: partyNo as string,
     partyYesDeposited: partyYesDeposited as boolean,
     partyNoDeposited: partyNoDeposited as boolean,
     assertionId: assertionId as string,
     resolvedYes: resolvedYes as boolean,
+    juryOutcomeYes: juryOutcomeYes as boolean,
+    juryDeadline: Number(juryDeadline),
   };
 }
 
 const ESCROW_FIELDS = [
   'state', 'partyYes', 'partyNo', 'stakeAmount',
-  'deadline', 'description', 'assertionId', 'resolvedYes',
-  'partyYesDeposited', 'partyNoDeposited',
+  'deadline', 'challengeWindow', 'description', 'assertionId', 'resolvedYes',
+  'partyYesDeposited', 'partyNoDeposited', 'juryOutcomeYes', 'juryDeadline',
 ] as const;
 
 export async function getAllPredictions(): Promise<Prediction[]> {
@@ -131,11 +141,14 @@ export async function getAllPredictions(): Promise<Prediction[]> {
       partyNo: vals[2].result as string,
       stakeAmount: formatUnits(vals[3].result as bigint, 6),
       deadline: Number(vals[4].result),
-      description: vals[5].result as string,
-      assertionId: vals[6].result as string,
-      resolvedYes: vals[7].result as boolean,
-      partyYesDeposited: vals[8].result as boolean,
-      partyNoDeposited: vals[9].result as boolean,
+      challengeWindow: Number(vals[5].result),
+      description: vals[6].result as string,
+      assertionId: vals[7].result as string,
+      resolvedYes: vals[8].result as boolean,
+      partyYesDeposited: vals[9].result as boolean,
+      partyNoDeposited: vals[10].result as boolean,
+      juryOutcomeYes: vals[11].result as boolean,
+      juryDeadline: Number(vals[12].result),
     });
   }
 

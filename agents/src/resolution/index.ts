@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { Agent, run } from '@openserv-labs/sdk';
 import { provision, triggers } from '@openserv-labs/client';
 import { z } from 'zod';
-import { getEscrowState, initiateResolution, settleAssertion } from '../shared/blockchain.js';
+import { getEscrowState, initiateResolution, resolveByJury, settleAssertion } from '../shared/blockchain.js';
 import { parsePredictionSpec, type PredictionSpec, type JuryVote, type ResolutionResult } from '../shared/types.js';
 import type { Address } from 'viem';
 
@@ -137,35 +137,37 @@ agent.addCapability({
       `Jury result: ${result.outcome ? 'YES' : 'NO'} (${result.votes.filter((v) => v.vote).length}/3 votes YES)`,
     );
 
-    // Submit on-chain
+    // Submit via jury path (fast) — parties can challenge within challengeWindow to escalate to UMA
     try {
-      console.log('Submitting resolution on-chain...');
-      const txHash = await initiateResolution(
+      console.log('Submitting jury resolution on-chain...');
+      const txHash = await resolveByJury(
         spec.escrowAddress as Address,
-        result.claim,
         result.outcome,
       );
 
-      spec.status = 'resolving';
+      const updatedState = await getEscrowState(spec.escrowAddress as Address);
 
-      return `Resolution submitted:\n\`\`\`json\n${JSON.stringify(
+      return `Jury resolution submitted:\n\`\`\`json\n${JSON.stringify(
         {
           escrowAddress: spec.escrowAddress,
           outcome: result.outcome ? 'YES' : 'NO',
           claim: result.claim,
           txHash,
+          challengeDeadline: updatedState.juryDeadline > 0n
+            ? new Date(Number(updatedState.juryDeadline) * 1000).toISOString()
+            : 'unknown',
           votes: result.votes.map((v) => ({
             agent: v.agentId,
             vote: v.vote ? 'YES' : 'NO',
             reasoning: v.reasoning,
           })),
-          note: 'UMA liveness period (2hr) started. Call settle-assertion with this escrow address after 2hr to finalize and release funds.',
+          note: 'Jury resolution proposed. Either party can challenge within the challenge window to escalate to UMA. If unchallenged, call settle-jury with this escrow address after the window expires.',
         },
         null,
         2,
       )}\n\`\`\``;
     } catch (e) {
-      return `Error submitting resolution: ${e}`;
+      return `Error submitting jury resolution: ${e}`;
     }
   },
 });
@@ -186,12 +188,16 @@ agent.addCapability({
           state: state.state,
           assertionId: state.assertionId,
           resolvedYes: state.resolvedYes,
+          juryOutcomeYes: state.juryOutcomeYes,
+          juryDeadline: state.juryDeadline > 0n ? new Date(Number(state.juryDeadline) * 1000).toISOString() : null,
           note:
-            state.state === 'Resolving'
-              ? 'UMA liveness period active. Call settle-assertion with this escrow address after 2hr if undisputed.'
-              : state.state === 'Settled'
-                ? `Outcome: ${state.resolvedYes ? 'YES' : 'NO'}. Funds distributed.`
-                : 'Awaiting resolution.',
+            state.state === 'JuryResolving'
+              ? `Jury proposed ${state.juryOutcomeYes ? 'YES' : 'NO'}. Challenge window until ${new Date(Number(state.juryDeadline) * 1000).toISOString()}. Call settle-jury after window expires.`
+              : state.state === 'Resolving'
+                ? 'UMA liveness period active. Call settle-assertion with this escrow address after 2hr if undisputed.'
+                : state.state === 'Settled'
+                  ? `Outcome: ${state.resolvedYes ? 'YES' : 'NO'}. Funds distributed.`
+                  : 'Awaiting resolution.',
         },
         null,
         2,
@@ -247,6 +253,71 @@ agent.addCapability({
         return `Liveness period not yet elapsed. The 2hr UMA dispute window is still active. Try again later.`;
       }
       return `Error settling assertion: ${msg}`;
+    }
+  },
+});
+
+agent.addCapability({
+  name: 'settle-jury',
+  description:
+    'Settles a jury resolution after the challenge window has expired, triggering payout from the escrow to the winner.',
+  schema: z.object({
+    escrowAddress: z.string().describe('The escrow contract address to settle'),
+  }),
+  async run({ args }) {
+    try {
+      const state = await getEscrowState(args.escrowAddress as Address);
+
+      if (state.state === 'Settled') {
+        return `Already settled:\n\`\`\`json\n${JSON.stringify(
+          {
+            escrowAddress: args.escrowAddress,
+            outcome: state.resolvedYes ? 'YES' : 'NO',
+            winner: state.resolvedYes ? state.partyYes : state.partyNo,
+          },
+          null,
+          2,
+        )}\n\`\`\``;
+      }
+
+      if (state.state !== 'JuryResolving') {
+        return `Error: Escrow is in state "${state.state}" — must be "JuryResolving" to settle jury resolution.`;
+      }
+
+      const now = Math.floor(Date.now() / 1000);
+      if (now < Number(state.juryDeadline)) {
+        const remaining = Number(state.juryDeadline) - now;
+        const mins = Math.floor(remaining / 60);
+        const secs = remaining % 60;
+        return `Challenge window still active. ${mins}m ${secs}s remaining until ${new Date(Number(state.juryDeadline) * 1000).toISOString()}.`;
+      }
+
+      const { deployerWallet, publicClient, predictionEscrowAbi } = await import('../shared/blockchain.js');
+      const { baseSepolia } = await import('viem/chains');
+
+      const hash = await deployerWallet.writeContract({
+        address: args.escrowAddress as Address,
+        abi: predictionEscrowAbi,
+        functionName: 'settleJuryResolution',
+        chain: baseSepolia,
+      });
+
+      await publicClient.waitForTransactionReceipt({ hash });
+
+      const settled = await getEscrowState(args.escrowAddress as Address);
+
+      return `Jury settlement complete:\n\`\`\`json\n${JSON.stringify(
+        {
+          escrowAddress: args.escrowAddress,
+          outcome: settled.resolvedYes ? 'YES' : 'NO',
+          winner: settled.resolvedYes ? settled.partyYes : settled.partyNo,
+          txHash: hash,
+        },
+        null,
+        2,
+      )}\n\`\`\``;
+    } catch (e: any) {
+      return `Error settling jury resolution: ${e?.message || String(e)}`;
     }
   },
 });

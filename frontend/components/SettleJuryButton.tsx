@@ -2,18 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { useAccount, useWriteContract } from 'wagmi';
-import { parseAbi, type Hex } from 'viem';
+import { parseAbi, type Address } from 'viem';
 
-const OOV3_ADDRESS = '0x0F7fC5E6482f096380db6158f978167b57388deE' as const;
-const abi = parseAbi(['function settleAssertion(bytes32 assertionId) external']);
+const abi = parseAbi(['function settleJuryResolution() external']);
 
-export function SettleButton({
-  assertionId,
-  escrowAddress,
-}: {
-  assertionId: string;
-  escrowAddress: string;
-}) {
+export function SettleJuryButton({ escrowAddress }: { escrowAddress: string }) {
   const { isConnected } = useAccount();
   const { writeContract, data: txHash, isPending, isSuccess, isError, error } = useWriteContract();
   const [mounted, setMounted] = useState(false);
@@ -32,16 +25,15 @@ export function SettleButton({
         <button
           onClick={() =>
             writeContract({
-              address: OOV3_ADDRESS,
+              address: escrowAddress as Address,
               abi,
-              functionName: 'settleAssertion',
-              args: [assertionId as Hex],
+              functionName: 'settleJuryResolution',
             })
           }
           disabled={isPending}
           className="px-4 py-2 bg-status-settled/20 border border-status-settled/40 hover:bg-status-settled/30 disabled:opacity-50 rounded-lg text-sm text-status-settled font-medium transition-colors"
         >
-          {isPending ? 'Settling...' : 'Settle Assertion'}
+          {isPending ? 'Settling...' : 'Settle Jury Resolution'}
         </button>
       )}
       {isSuccess && txHash && (

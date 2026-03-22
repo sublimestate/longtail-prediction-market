@@ -1,4 +1,4 @@
-export type EscrowState = 'Created' | 'Funded' | 'Resolving' | 'Settled' | 'Expired';
+export type EscrowState = 'Created' | 'Funded' | 'Resolving' | 'Settled' | 'Expired' | 'JuryResolving';
 
 export interface JuryVote {
   agentId: number;
@@ -19,6 +19,9 @@ export interface Prediction {
   partyNoDeposited: boolean;
   assertionId: string;
   resolvedYes: boolean;
+  challengeWindow: number;
+  juryOutcomeYes: boolean;
+  juryDeadline: number;
   juryVotes?: JuryVote[];
   resolutionCriteria?: string;
 }

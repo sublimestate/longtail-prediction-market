@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { useAccount, useConnect, useDisconnect } from 'wagmi';
 import { injected } from 'wagmi';
 
@@ -7,8 +8,11 @@ export function ConnectButton() {
   const { address, isConnected, chainId } = useAccount();
   const { connect } = useConnect();
   const { disconnect } = useDisconnect();
+  const [mounted, setMounted] = useState(false);
 
-  if (!isConnected) {
+  useEffect(() => { setMounted(true); }, []);
+
+  if (!mounted || !isConnected) {
     return (
       <button
         onClick={() => connect({ connector: injected() })}

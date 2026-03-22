@@ -12,7 +12,7 @@ import { config } from './config.js';
 
 // ABIs
 export const escrowFactoryAbi = parseAbi([
-  'function createEscrow(address partyYes, address partyNo, uint256 stakeAmount, uint256 deadline, string description) external returns (address)',
+  'function createEscrow(address partyYes, address partyNo, uint256 stakeAmount, uint256 deadline, string description, uint64 challengeWindow) external returns (address)',
   'function getEscrowCount() external view returns (uint256)',
   'function getEscrow(uint256 index) external view returns (address)',
   'event EscrowCreated(address indexed escrow, address indexed partyYes, address indexed partyNo, uint256 stakeAmount, uint256 deadline, string description)',
@@ -21,17 +21,24 @@ export const escrowFactoryAbi = parseAbi([
 export const predictionEscrowAbi = parseAbi([
   'function deposit() external',
   'function initiateResolution(bytes claim, bool _outcomeYes) external',
+  'function resolveByJury(bool _outcomeYes) external',
+  'function challengeJuryResolution() external',
+  'function settleJuryResolution() external',
   'function expire() external',
   'function state() external view returns (uint8)',
   'function partyYes() external view returns (address)',
   'function partyNo() external view returns (address)',
   'function stakeAmount() external view returns (uint256)',
   'function deadline() external view returns (uint256)',
+  'function challengeWindow() external view returns (uint64)',
   'function description() external view returns (string)',
   'function assertionId() external view returns (bytes32)',
   'function resolvedYes() external view returns (bool)',
+  'function juryOutcomeYes() external view returns (bool)',
+  'function juryDeadline() external view returns (uint256)',
   'event Deposited(address indexed party, uint256 amount)',
   'event ResolutionInitiated(bytes32 indexed assertionId, bool proposedOutcome)',
+  'event JuryResolutionProposed(bool outcome, uint256 challengeDeadline)',
   'event Settled(bool resolvedYes, address winner)',
 ]);
 
@@ -52,6 +59,7 @@ export const EscrowState = {
   2: 'Resolving',
   3: 'Settled',
   4: 'Expired',
+  5: 'JuryResolving',
 } as const;
 
 // Clients
@@ -91,6 +99,7 @@ export async function createEscrow(
   stakeAmount: string,
   deadline: number,
   description: string,
+  challengeWindow: number = 600, // 10 minutes default
 ): Promise<Address> {
   const factoryAddress = config.blockchain.factoryAddress;
   if (!factoryAddress) throw new Error('FACTORY_ADDRESS not set');
@@ -101,7 +110,7 @@ export async function createEscrow(
     address: factoryAddress,
     abi: escrowFactoryAbi,
     functionName: 'createEscrow',
-    args: [partyYes, partyNo, stakeWei, BigInt(deadline), description],
+    args: [partyYes, partyNo, stakeWei, BigInt(deadline), description, BigInt(challengeWindow)],
     chain: baseSepolia,
   });
 
@@ -228,26 +237,48 @@ export async function settleAssertion(escrowAddress: Address): Promise<{
   return { txHash: hash, resolvedYes: settled.resolvedYes, winner };
 }
 
+export async function resolveByJury(
+  escrowAddress: Address,
+  outcomeYes: boolean,
+): Promise<string> {
+  const hash = await deployerWallet.writeContract({
+    address: escrowAddress,
+    abi: predictionEscrowAbi,
+    functionName: 'resolveByJury',
+    args: [outcomeYes],
+    chain: baseSepolia,
+  });
+
+  await publicClient.waitForTransactionReceipt({ hash });
+  return hash;
+}
+
 export async function getEscrowState(escrowAddress: Address): Promise<{
   state: string;
   partyYes: Address;
   partyNo: Address;
   stakeAmount: bigint;
   deadline: bigint;
+  challengeWindow: bigint;
   description: string;
   assertionId: `0x${string}`;
   resolvedYes: boolean;
+  juryOutcomeYes: boolean;
+  juryDeadline: bigint;
 }> {
-  const [state, partyYes, partyNo, stakeAmount, deadline, description, assertionId, resolvedYes] =
+  const [state, partyYes, partyNo, stakeAmount, deadline, challengeWindow, description, assertionId, resolvedYes, juryOutcomeYes, juryDeadline] =
     await Promise.all([
       publicClient.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'state' }),
       publicClient.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'partyYes' }),
       publicClient.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'partyNo' }),
       publicClient.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'stakeAmount' }),
       publicClient.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'deadline' }),
+      publicClient.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'challengeWindow' }),
       publicClient.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'description' }),
       publicClient.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'assertionId' }),
       publicClient.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'resolvedYes' }),
+      publicClient.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'juryOutcomeYes' }),
+      publicClient.readContract({ address: escrowAddress, abi: predictionEscrowAbi, functionName: 'juryDeadline' }),
     ]);
 
   return {
@@ -256,8 +287,11 @@ export async function getEscrowState(escrowAddress: Address): Promise<{
     partyNo: partyNo as Address,
     stakeAmount: stakeAmount as bigint,
     deadline: deadline as bigint,
+    challengeWindow: challengeWindow as bigint,
     description: description as string,
     assertionId: assertionId as `0x${string}`,
     resolvedYes: resolvedYes as boolean,
+    juryOutcomeYes: juryOutcomeYes as boolean,
+    juryDeadline: juryDeadline as bigint,
   };
 }

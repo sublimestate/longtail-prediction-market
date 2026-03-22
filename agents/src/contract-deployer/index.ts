@@ -76,6 +76,7 @@ agent.addCapability({
         spec.stakeAmount,
         spec.deadline,
         spec.description,
+        spec.challengeWindow ?? 600,
       );
 
       spec.escrowAddress = escrowAddress;

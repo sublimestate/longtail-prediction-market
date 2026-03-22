@@ -28,12 +28,13 @@ interface IOptimisticOracleV3 {
 contract PredictionEscrow is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    enum State { Created, Funded, Resolving, Settled, Expired }
+    enum State { Created, Funded, Resolving, Settled, Expired, JuryResolving }
 
     address public immutable partyYes;
     address public partyNo;
     uint256 public immutable stakeAmount;
     uint256 public immutable deadline;
+    uint64 public immutable challengeWindow;
     string public description;
 
     IOptimisticOracleV3 public immutable oo;
@@ -47,11 +48,16 @@ contract PredictionEscrow is ReentrancyGuard {
     bool public partyYesDeposited;
     bool public partyNoDeposited;
 
+    bool public juryOutcomeYes;
+    uint256 public juryDeadline;
+
     uint256 public constant EXPIRY_PERIOD = 7 days;
     uint64 public constant LIVENESS = 7200; // 2 hours
 
     event Deposited(address indexed party, uint256 amount);
     event Matched(address indexed newPartyNo);
+    event JuryResolutionProposed(bool outcome, uint256 challengeDeadline);
+    event JuryChallenged(address indexed challenger);
     event ResolutionInitiated(bytes32 indexed assertionId, bool proposedOutcome);
     event Settled(bool resolvedYes, address winner);
     event Expired();
@@ -69,17 +75,20 @@ contract PredictionEscrow is ReentrancyGuard {
         uint256 _deadline,
         string memory _description,
         address _oo,
-        address _currency
+        address _currency,
+        uint64 _challengeWindow
     ) {
         require(_partyYes != address(0), "Invalid partyYes");
         require(_partyYes != _partyNo, "Same party");
         require(_stakeAmount > 0, "Zero stake");
         require(_deadline > block.timestamp, "Deadline passed");
+        require(_challengeWindow >= 5 minutes, "Challenge window too short");
 
         partyYes = _partyYes;
         partyNo = _partyNo;
         stakeAmount = _stakeAmount;
         deadline = _deadline;
+        challengeWindow = _challengeWindow;
         description = _description;
         oo = IOptimisticOracleV3(_oo);
         currency = IERC20(_currency);
@@ -164,6 +173,39 @@ contract PredictionEscrow is ReentrancyGuard {
 
     function assertionDisputedCallback(bytes32 _assertionId) external {
         // Required by UMA interface — no action needed
+    }
+
+    function resolveByJury(bool _outcomeYes) external nonReentrant onlyState(State.Funded) {
+        require(block.timestamp >= deadline, "Before deadline");
+
+        juryOutcomeYes = _outcomeYes;
+        juryDeadline = block.timestamp + challengeWindow;
+        state = State.JuryResolving;
+
+        emit JuryResolutionProposed(_outcomeYes, juryDeadline);
+    }
+
+    function challengeJuryResolution() external nonReentrant onlyState(State.JuryResolving) {
+        require(msg.sender == partyYes || msg.sender == partyNo, "Not a party");
+        require(block.timestamp < juryDeadline, "Challenge window closed");
+
+        state = State.Funded;
+        juryDeadline = 0;
+
+        emit JuryChallenged(msg.sender);
+    }
+
+    function settleJuryResolution() external nonReentrant onlyState(State.JuryResolving) {
+        require(block.timestamp >= juryDeadline, "Challenge window active");
+
+        resolvedYes = juryOutcomeYes;
+        state = State.Settled;
+
+        address winner = resolvedYes ? partyYes : partyNo;
+        uint256 payout = stakeAmount * 2;
+        currency.safeTransfer(winner, payout);
+
+        emit Settled(resolvedYes, winner);
     }
 
     function expire() external nonReentrant {

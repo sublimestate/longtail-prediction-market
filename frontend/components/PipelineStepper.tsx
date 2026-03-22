@@ -6,6 +6,7 @@ const STEP_INDEX: Record<EscrowState, number> = {
   Created: 0,
   Funded: 1,
   Resolving: 2,
+  JuryResolving: 2,
   Settled: 3,
   Expired: -1,
 };

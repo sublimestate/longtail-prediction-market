@@ -9,6 +9,7 @@ const DOT_COLORS: Record<string, string> = {
   Resolving: 'bg-status-resolving',
   Settled: 'bg-status-settled',
   Expired: 'bg-status-expired',
+  JuryResolving: 'bg-yellow-500',
 };
 
 function truncateAddress(addr: string) {
@@ -16,7 +17,8 @@ function truncateAddress(addr: string) {
 }
 
 export function TimelineItem({ prediction }: { prediction: Prediction }) {
-  const { escrowAddress, description, state, stakeAmount, deadline, resolvedYes } = prediction;
+  const { escrowAddress, description, state, stakeAmount, deadline, resolvedYes, partyNo } = prediction;
+  const isOpen = state === 'Created' && partyNo === '0x0000000000000000000000000000000000000000';
 
   return (
     <div className="relative pl-6">
@@ -24,7 +26,14 @@ export function TimelineItem({ prediction }: { prediction: Prediction }) {
       <Link href={`/prediction/${escrowAddress}`} className="block bg-navy-800 border border-navy-700/50 rounded-lg p-4 hover:border-gray-600 transition-colors">
         <div className="flex justify-between items-start mb-2">
           <p className="text-white text-sm font-medium flex-1 mr-4">{description || 'Untitled prediction'}</p>
-          <StatusBadge state={state} />
+          <div className="flex items-center gap-2">
+            {isOpen && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-400">
+                OPEN
+              </span>
+            )}
+            <StatusBadge state={state} />
+          </div>
         </div>
         <div className="flex items-center gap-4 text-xs text-gray-400">
           <span>{stakeAmount} USDC</span>
@@ -34,6 +43,9 @@ export function TimelineItem({ prediction }: { prediction: Prediction }) {
           )}
           {(state === 'Created' || state === 'Funded') && (
             <CountdownTimer targetTimestamp={deadline} />
+          )}
+          {state === 'JuryResolving' && (
+            <span className="text-yellow-400">Jury challenge window active</span>
           )}
           {state === 'Resolving' && (
             <span className="text-status-resolving">UMA dispute window active</span>

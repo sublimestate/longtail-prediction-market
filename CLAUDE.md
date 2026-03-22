@@ -43,8 +43,9 @@ Required in `.env`:
 - `FACTORY_ADDRESS` (set after deploying EscrowFactory)
 
 Required in `frontend/.env.local`:
-- `FACTORY_ADDRESS`, `BASE_SEPOLIA_RPC_URL`
+- `FACTORY_ADDRESS`, `BASE_SEPOLIA_RPC_URL`, `NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL`
 - `WEBHOOK_TOKEN` (from webhook trigger URL), `OPENSERV_API_KEY`
+- `OPENAI_API_KEY` (used for LLM prediction validation in `/api/predict`)
 
 Auto-created by `provision()`:
 - `WALLET_PRIVATE_KEY` — OpenServ platform wallet (saved to `.env` and `.openserv.json`)
@@ -59,7 +60,13 @@ Hackathon URL: https://synthesis.md/
 
 ## Agent Architecture
 
-3 agents form a pipeline: **Market Maker** (structures predictions) → **Contract Deployer** (deploys open escrow via factory with partyNo=address(0), deposits creator's USDC) → **Resolution** (3-member LLM jury, submits UMA claim, settles after liveness). Counterparty matching happens on-chain — any user/agent can call `deposit()` on an open escrow to claim the NO side.
+3 agents form a pipeline: **Market Maker** (structures predictions) → **Contract Deployer** (deploys open escrow via factory with partyNo=address(0), deposits creator's USDC) → **Resolution** (3-member LLM jury, proposes outcome via `resolveByJury()`). Counterparty matching happens on-chain — any user/agent can call `deposit()` on an open escrow to claim the NO side.
+
+### Resolution: Jury → UMA Fallback
+- Default: LLM jury proposes outcome, starts a creator-chosen challenge window (min 5 min)
+- Either party can call `challengeJuryResolution()` to reset to Funded and escalate to UMA
+- If unchallenged, anyone calls `settleJuryResolution()` after the window expires
+- UMA path (`initiateResolution()`) still available as direct alternative (2hr liveness)
 
 ### Agent Provisioning
 - All agents self-provision on first start via `provision()` from `@openserv-labs/client`
@@ -81,3 +88,5 @@ Hackathon URL: https://synthesis.md/
 - **Deployment mutex**: Contract Deployer uses an in-memory `deployInProgress` flag to block concurrent `deploy-escrow` calls. Platform retries are rejected immediately instead of causing nonce races.
 - **USDC pre-flight check**: Contract Deployer checks the creator wallet's USDC balance before deploying. Fails fast with the wallet address and shortfall instead of wasting gas on a doomed deployment.
 - **Open matching**: Escrows deploy with `partyNo = address(0)`. Any wallet can call `deposit()` to claim the NO side. The frontend shows "Match & Fund" for open predictions.
+- **Hydration mismatch**: All wallet-dependent components (`FundButton`, `ConnectButton`, `SettleButton`, etc.) must use a `mounted` state guard to avoid SSR/client HTML mismatch with wagmi.
+- **OpenServ WebSocket drops**: Agents frequently disconnect (1006) from the proxy. They auto-reconnect but may miss task dispatches. Platform retries usually succeed.

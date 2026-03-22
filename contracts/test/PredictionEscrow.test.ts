@@ -6,6 +6,7 @@ describe("PredictionEscrow", function () {
   const STAKE = ethers.parseUnits("10", 6); // 10 USDC
   const ONE_DAY = 86400;
   const SEVEN_DAYS = 7 * ONE_DAY;
+  const CHALLENGE_WINDOW = 600; // 10 minutes
   const MOCK_BOND = ethers.parseUnits("1", 6); // 1 USDC
 
   async function deployFixture() {
@@ -34,7 +35,8 @@ describe("PredictionEscrow", function () {
       partyNo.address,
       STAKE,
       deadline,
-      "Test prediction"
+      "Test prediction",
+      CHALLENGE_WINDOW
     );
     const receipt = await tx.wait();
 
@@ -72,7 +74,7 @@ describe("PredictionEscrow", function () {
       const deadline = (await time.latest()) + ONE_DAY;
 
       await expect(
-        factory.createEscrow(partyYes.address, partyNo.address, STAKE, deadline, "Another bet")
+        factory.createEscrow(partyYes.address, partyNo.address, STAKE, deadline, "Another bet", CHALLENGE_WINDOW)
       ).to.emit(factory, "EscrowCreated");
     });
   });
@@ -218,6 +220,122 @@ describe("PredictionEscrow", function () {
       await escrow.expire();
 
       expect(await usdc.balanceOf(partyYes.address) - balBefore).to.equal(STAKE);
+    });
+  });
+
+  describe("Jury Resolution", function () {
+    async function fundedFixture() {
+      const fixture = await deployFixture();
+      await fixture.escrow.connect(fixture.partyYes).deposit();
+      await fixture.escrow.connect(fixture.partyNo).deposit();
+      return fixture;
+    }
+
+    it("jury resolves YES and pays partyYes after challenge window", async function () {
+      const { escrow, usdc, partyYes, deadline } = await loadFixture(fundedFixture);
+
+      await time.increaseTo(deadline);
+      await escrow.resolveByJury(true);
+
+      expect(await escrow.state()).to.equal(5); // JuryResolving
+
+      // Advance past challenge window
+      await time.increase(CHALLENGE_WINDOW);
+
+      const balBefore = await usdc.balanceOf(partyYes.address);
+      await escrow.settleJuryResolution();
+
+      expect(await escrow.state()).to.equal(3); // Settled
+      expect(await escrow.resolvedYes()).to.equal(true);
+      expect(await usdc.balanceOf(partyYes.address) - balBefore).to.equal(STAKE * 2n);
+    });
+
+    it("jury resolves NO and pays partyNo after challenge window", async function () {
+      const { escrow, usdc, partyNo, deadline } = await loadFixture(fundedFixture);
+
+      await time.increaseTo(deadline);
+      await escrow.resolveByJury(false);
+
+      await time.increase(CHALLENGE_WINDOW);
+
+      const balBefore = await usdc.balanceOf(partyNo.address);
+      await escrow.settleJuryResolution();
+
+      expect(await escrow.resolvedYes()).to.equal(false);
+      expect(await usdc.balanceOf(partyNo.address) - balBefore).to.equal(STAKE * 2n);
+    });
+
+    it("cannot resolve by jury before deadline", async function () {
+      const { escrow } = await loadFixture(fundedFixture);
+
+      await expect(escrow.resolveByJury(true)).to.be.revertedWith("Before deadline");
+    });
+
+    it("cannot settle during challenge window", async function () {
+      const { escrow, deadline } = await loadFixture(fundedFixture);
+
+      await time.increaseTo(deadline);
+      await escrow.resolveByJury(true);
+
+      await expect(escrow.settleJuryResolution()).to.be.revertedWith("Challenge window active");
+    });
+
+    it("party can challenge and state resets to Funded", async function () {
+      const { escrow, partyNo, deadline } = await loadFixture(fundedFixture);
+
+      await time.increaseTo(deadline);
+      await escrow.resolveByJury(true);
+
+      await escrow.connect(partyNo).challengeJuryResolution();
+
+      expect(await escrow.state()).to.equal(1); // Funded
+    });
+
+    it("outsider cannot challenge", async function () {
+      const { escrow, outsider, deadline } = await loadFixture(fundedFixture);
+
+      await time.increaseTo(deadline);
+      await escrow.resolveByJury(true);
+
+      await expect(
+        escrow.connect(outsider).challengeJuryResolution()
+      ).to.be.revertedWith("Not a party");
+    });
+
+    it("cannot challenge after window closes", async function () {
+      const { escrow, partyYes, deadline } = await loadFixture(fundedFixture);
+
+      await time.increaseTo(deadline);
+      await escrow.resolveByJury(true);
+
+      await time.increase(CHALLENGE_WINDOW);
+
+      await expect(
+        escrow.connect(partyYes).challengeJuryResolution()
+      ).to.be.revertedWith("Challenge window closed");
+    });
+
+    it("after challenge, can fall back to UMA resolution", async function () {
+      const { escrow, oracle, usdc, partyYes, partyNo, deadline } = await loadFixture(fundedFixture);
+
+      // Jury proposes YES
+      await time.increaseTo(deadline);
+      await escrow.resolveByJury(true);
+
+      // PartyNo challenges
+      await escrow.connect(partyNo).challengeJuryResolution();
+      expect(await escrow.state()).to.equal(1); // Funded
+
+      // Fall back to UMA
+      const claim = ethers.toUtf8Bytes("The prediction is true");
+      await escrow.initiateResolution(claim, true);
+
+      const assertionId = await escrow.assertionId();
+      const balBefore = await usdc.balanceOf(partyYes.address);
+      await oracle.resolveAssertion(assertionId, true);
+
+      expect(await escrow.state()).to.equal(3); // Settled
+      expect(await usdc.balanceOf(partyYes.address) - balBefore).to.equal(STAKE * 2n);
     });
   });
 });

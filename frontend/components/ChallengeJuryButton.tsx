@@ -2,18 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { useAccount, useWriteContract } from 'wagmi';
-import { parseAbi, type Hex } from 'viem';
+import { parseAbi, type Address } from 'viem';
 
-const OOV3_ADDRESS = '0x0F7fC5E6482f096380db6158f978167b57388deE' as const;
-const abi = parseAbi(['function settleAssertion(bytes32 assertionId) external']);
+const abi = parseAbi(['function challengeJuryResolution() external']);
 
-export function SettleButton({
-  assertionId,
-  escrowAddress,
-}: {
-  assertionId: string;
-  escrowAddress: string;
-}) {
+export function ChallengeJuryButton({ escrowAddress }: { escrowAddress: string }) {
   const { isConnected } = useAccount();
   const { writeContract, data: txHash, isPending, isSuccess, isError, error } = useWriteContract();
   const [mounted, setMounted] = useState(false);
@@ -22,7 +15,7 @@ export function SettleButton({
 
   if (!mounted || !isConnected) {
     return (
-      <p className="text-xs text-gray-500 mt-2">Connect wallet to settle</p>
+      <p className="text-xs text-gray-500 mt-2">Connect wallet to challenge</p>
     );
   }
 
@@ -32,21 +25,20 @@ export function SettleButton({
         <button
           onClick={() =>
             writeContract({
-              address: OOV3_ADDRESS,
+              address: escrowAddress as Address,
               abi,
-              functionName: 'settleAssertion',
-              args: [assertionId as Hex],
+              functionName: 'challengeJuryResolution',
             })
           }
           disabled={isPending}
-          className="px-4 py-2 bg-status-settled/20 border border-status-settled/40 hover:bg-status-settled/30 disabled:opacity-50 rounded-lg text-sm text-status-settled font-medium transition-colors"
+          className="px-4 py-2 bg-red-500/20 border border-red-500/40 hover:bg-red-500/30 disabled:opacity-50 rounded-lg text-sm text-red-400 font-medium transition-colors"
         >
-          {isPending ? 'Settling...' : 'Settle Assertion'}
+          {isPending ? 'Challenging...' : 'Challenge → Escalate to UMA'}
         </button>
       )}
       {isSuccess && txHash && (
-        <p className="text-xs text-status-settled mt-1">
-          Settled!{' '}
+        <p className="text-xs text-yellow-400 mt-1">
+          Challenged! Escrow reset to Funded — resolution will use UMA.{' '}
           <a
             href={`https://sepolia.basescan.org/tx/${txHash}`}
             target="_blank"
@@ -59,7 +51,7 @@ export function SettleButton({
       )}
       {isError && (
         <p className="text-xs text-red-400 mt-1">
-          {error?.message?.split('\n')[0] || 'Settlement failed'}
+          {error?.message?.split('\n')[0] || 'Challenge failed'}
         </p>
       )}
     </div>

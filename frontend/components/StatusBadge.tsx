@@ -6,6 +6,7 @@ const STATUS_STYLES: Record<EscrowState, string> = {
   Resolving: 'bg-status-resolving/20 text-status-resolving',
   Settled: 'bg-status-settled/20 text-status-settled',
   Expired: 'bg-status-expired/20 text-status-expired',
+  JuryResolving: 'bg-yellow-500/20 text-yellow-400',
 };
 
 export function StatusBadge({ state }: { state: EscrowState }) {

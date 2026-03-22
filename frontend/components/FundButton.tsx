@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { parseAbi, parseUnits, type Address } from 'viem';
 
@@ -35,26 +35,30 @@ export function FundButton({
   const [step, setStep] = useState<Step>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [txHash, setTxHash] = useState<string>();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => { setMounted(true); }, []);
 
   const { writeContractAsync } = useWriteContract();
 
-  if (!isConnected) {
-    return <p className="text-xs text-gray-500 mt-2">Connect wallet to fund</p>;
+  // Always render same wrapper to avoid hydration mismatch
+  if (!mounted || !isConnected) {
+    return <div className="mt-3"><p className="text-xs text-gray-500">Connect wallet to fund</p></div>;
   }
 
   const addrLower = address?.toLowerCase();
   const isYes = addrLower === partyYes.toLowerCase();
   const isOpen = partyNo === '0x0000000000000000000000000000000000000000';
   const isNo = !isOpen && addrLower === partyNo.toLowerCase();
-  const canMatch = isOpen && !isYes; // anyone except partyYes can claim the NO side
+  const canMatch = isOpen && !isYes;
 
   if (!isYes && !isNo && !canMatch) {
-    return <p className="text-xs text-gray-500 mt-2">Your wallet is not a party in this prediction</p>;
+    return <div className="mt-3"><p className="text-xs text-gray-500">Your wallet is not a party in this prediction</p></div>;
   }
 
   const alreadyDeposited = (isYes && partyYesDeposited) || (isNo && partyNoDeposited);
   if (alreadyDeposited) {
-    return <p className="text-xs text-status-settled mt-2">You have already deposited</p>;
+    return <div className="mt-3"><p className="text-xs text-status-settled">You have already deposited</p></div>;
   }
 
   const side = canMatch ? 'NO' : isYes ? 'YES' : 'NO';

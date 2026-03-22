@@ -9,6 +9,7 @@ export interface PredictionSpec {
   partyNo?: { address: string };
   escrowAddress?: string;
   assertionId?: string;
+  challengeWindow?: number; // seconds, defaults to 600 (10 min)
   createdAt: number;
 }
 
@@ -72,6 +73,7 @@ export function parsePredictionSpec(input: string): PredictionSpec {
     partyNo: normalizeParty(data.partyNo ?? raw.partyNo),
     escrowAddress: data.escrowAddress || raw.escrowAddress,
     assertionId: data.assertionId || raw.assertionId,
+    challengeWindow: Number(data.challengeWindow ?? raw.challengeWindow ?? 600),
     createdAt: data.createdAt || raw.createdAt || Math.floor(Date.now() / 1000),
   };
 }
