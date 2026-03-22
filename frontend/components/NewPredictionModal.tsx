@@ -8,11 +8,25 @@ export function NewPredictionModal({ open, onClose }: { open: boolean; onClose: 
   const [deadline, setDeadline] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  // min deadline = 1 hour from now, formatted for datetime-local input
+  const minDatetime = new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 16);
 
   if (!open) return null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setValidationError(null);
+    const stake = parseFloat(stakeAmount);
+    if (isNaN(stake) || stake < 0.01 || stake > 1000) {
+      setValidationError('Stake must be between 0.01 and 1000 USDC');
+      return;
+    }
+    if (deadline && new Date(deadline) <= new Date()) {
+      setValidationError('Deadline must be in the future');
+      return;
+    }
     setSubmitting(true);
     setResult(null);
     try {
@@ -50,6 +64,7 @@ export function NewPredictionModal({ open, onClose }: { open: boolean; onClose: 
               placeholder="Will ETH hit $5,000 by June 2026?"
               className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-purple-500"
               rows={3}
+              maxLength={500}
               required
             />
           </div>
@@ -61,6 +76,7 @@ export function NewPredictionModal({ open, onClose }: { open: boolean; onClose: 
                 value={stakeAmount}
                 onChange={(e) => setStakeAmount(e.target.value)}
                 min="0.01"
+                max="1000"
                 step="0.01"
                 className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
               />
@@ -68,13 +84,17 @@ export function NewPredictionModal({ open, onClose }: { open: boolean; onClose: 
             <div className="flex-1">
               <label className="block text-sm text-gray-400 mb-1">Deadline</label>
               <input
-                type="date"
+                type="datetime-local"
                 value={deadline}
-                onChange={(e) => setDeadline(e.target.value)}
+                onChange={(e) => { setDeadline(e.target.value); setValidationError(null); }}
+                min={minDatetime}
                 className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
               />
             </div>
           </div>
+          {validationError && (
+            <p className="text-sm text-red-400">{validationError}</p>
+          )}
           {result && (
             <p className={`text-sm ${result.success ? 'text-status-settled' : 'text-red-400'}`}>
               {result.message}

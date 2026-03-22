@@ -5,6 +5,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { PipelineStepper } from '@/components/PipelineStepper';
 import { JuryCard } from '@/components/JuryCard';
 import { CountdownTimer } from '@/components/CountdownTimer';
+import { SettleButton } from '@/components/SettleButton';
 import { isAddress, type Address } from 'viem';
 
 export const dynamic = 'force-dynamic';
@@ -109,6 +110,7 @@ export default async function PredictionPage({
               {prediction.assertionId}
             </a>
             <p className="text-status-resolving text-xs mt-2">2hr liveness period active. Call settle-assertion after window closes.</p>
+            <SettleButton assertionId={prediction.assertionId} escrowAddress={address} />
           </div>
         </section>
       )}
