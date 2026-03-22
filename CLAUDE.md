@@ -9,13 +9,14 @@ Multi-agent system on OpenServ: propose predictions, find counterparties, deploy
 ```bash
 # Contracts
 cd contracts && npx hardhat compile   # Compile Solidity
-cd contracts && npx hardhat test      # Run all 12 contract tests
+cd contracts && npx hardhat test      # Run contract tests
 cd contracts && npx hardhat run scripts/deploy.ts --network baseSepolia  # Deploy factory
 
 # Agents
 cd agents && npm run start            # Start all 4 agents (auto-provisions on first run)
 npx tsx agents/src/setup-workflow.ts  # Create pipeline workflow (run from project root!)
 cd agents && npx tsc --noEmit         # Type-check agent code
+cd agents && npx vitest run           # Run agent tests
 ```
 
 ## Project Structure
@@ -47,28 +48,7 @@ Hackathon URL: https://synthesis.md/
 
 ## Agent Architecture
 
-### 1. Market Maker Agent
-- Accepts natural language predictions from users or agents
-- Structures them into a formal spec: event description, deadline, resolution criteria, stake
-- Clarifies ambiguity through conversation
-
-### 2. Matchmaker Agent
-- Maintains a pool of open predictions
-- Searches for opposing views when a new prediction arrives
-- Auto-assigns pre-funded agent wallet if no human counterparty found
-
-### 3. Contract Deployer Agent
-- Deploys per-prediction escrow contracts on Base using an audited factory pattern
-- Never generates Solidity — only fills in parameters (parties, stake, deadline, resolution agent)
-- Uses `EscrowFactory.createEscrow()` to deploy identical, audited `PredictionEscrow` instances
-- Contract uses OpenZeppelin primitives (ReentrancyGuard, SafeERC20)
-
-### 4. Oracle / Resolution Agent
-- When the deadline hits, gathers evidence (on-chain data, APIs, news)
-- Multi-agent jury: 3 sequential LLM evaluations (skeptic, optimist, arbiter) within one agent, majority wins
-- Submits claim text to the escrow contract, which calls UMA OOv3 directly
-- UMA dispute window (2hr) — losing party can dispute; escalates to DVM voters if challenged
-- After settlement, UMA calls back into the escrow contract to release funds
+4 agents form a pipeline: **Market Maker** (structures predictions) → **Matchmaker** (finds counterparty or assigns agent wallet) → **Contract Deployer** (deploys escrow via factory, never writes Solidity) → **Resolution** (3-member LLM jury, submits UMA claim, settles after liveness).
 
 ### Agent Provisioning
 - All agents self-provision on first start via `provision()` from `@openserv-labs/client`
@@ -78,39 +58,14 @@ Hackathon URL: https://synthesis.md/
 
 ## Decisions
 
-### Resolution Trust
-UMA Optimistic Oracle V3 on Base is the on-chain truth layer.
-- Escrow contract calls UMA directly (agent only provides claim text, cannot fake assertionId)
-- Dispute window protects against wrong proposals — losing party has financial incentive to dispute
-- Disputed outcomes escalate to Ethereum mainnet DVM voters as final arbiter
-- UMA OOv3 Base Mainnet: `0x2aBf1Bd76655de80eDB3086114315Eec75AF500c`
-- UMA OOv3 Base Sepolia: `0x0F7fC5E6482f096380db6158f978167b57388deE`
-
-### Hackathon Scope
-Full end-to-end flow. Counterparty pre-seeded via agent wallet.
-- Factory: `0x835a91497987D21F8Cb92336190BC99Cc90908F7` (Base Sepolia)
-- Latest clean escrow: `0x9b1FadF45efF6d84b7C988bCF7eE8fb06ccb0fdc` (Funded, 2 USDC, deadline March 28 2026)
-- Agent IDs: Market Maker 4005, Matchmaker 4006, Deployer 4007, Resolution 4008
-
-### Counterparty Discovery
-Combine active matchmaking + agent counterparty:
-- Matchmaker agent searches pool for a human counterparty first
-- If none found, an opposing agent automatically takes the other side
-- Ensures market always has liquidity and demo never stalls
-- **Note:** Revisit this approach before production — agent counterparty is a band-aid for the liquidity bootstrapping problem.
-
-### Contract Security
-Audited template + factory pattern:
-- One `PredictionEscrow.sol` contract, reused for every bet
-- `EscrowFactory` deploys instances with per-bet parameters only
-- Agent never writes or modifies Solidity — only provides deployment parameters
-- Uses OpenZeppelin v5 primitives (ReentrancyGuard, SafeERC20)
-
-### Regulatory
-Non-custodial P2P infrastructure. Avoid sports/elections content without legal review.
+- **Resolution trust:** UMA OOv3 on Base. Escrow calls UMA directly — agent only provides claim text. 2hr dispute window, escalates to DVM if challenged.
+- **Counterparty:** Matchmaker searches for humans first, falls back to agent wallet. Band-aid for liquidity — revisit before production.
+- **Contract security:** Audited factory pattern. Agent never writes Solidity, only provides deployment params. OpenZeppelin v5 primitives.
+- **Regulatory:** Non-custodial P2P. Avoid sports/elections content without legal review.
 
 ## Gotchas
 
+- **UMA does not auto-settle**: After `initiateResolution()`, someone must call `settle-assertion` on the resolution agent after the 2hr liveness window. Without this, the escrow stays in "Resolving" forever and funds remain locked.
 - **SIWE race condition**: Starting all 4 agents simultaneously causes wallet auth failures. `start-all.ts` staggers starts by 8 seconds.
 - **`.openserv.json` state**: `provision()` stores agent IDs/credentials here. `getProvisionedInfo()` requires the exact workflow name as the second argument.
 - **`generate()` fallback**: Resolution jury uses `generate()` for LLM calls but falls back to deterministic logic if it fails (e.g., demo Trump prediction always returns YES).
