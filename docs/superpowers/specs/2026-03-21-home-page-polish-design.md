@@ -10,7 +10,7 @@ Make the home page look impressive for hackathon judges by adding branding, a st
 
 **File:** `frontend/components/HomeClient.tsx`
 
-- Replace "Prediction Market" h1 with **"Longtail"** using a purple-to-blue gradient on the text (`bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent`)
+- Replace "Prediction Market" h1 with **"Longtail"** using a purple-to-blue gradient on the text (`inline-block bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent`)
 - Add subtitle below: "Agent-powered P2P predictions on Base" in `text-gray-500 text-sm`
 - Connect Wallet + New Prediction buttons stay right-aligned
 - Update page title in `frontend/app/layout.tsx` metadata to "Longtail"
@@ -27,7 +27,9 @@ Three inline stat cards between header and filters:
 | Total Staked | "Total Staked" | Sum of `stakeAmount * 2` for Funded/Resolving/JuryResolving/Settled, `stakeAmount` for Created. Formatted as "X USDC" |
 | Active Now | "Active" | Count of predictions where state is Funded, Resolving, or JuryResolving |
 
-Style: row of 3 cards, `bg-navy-800 border border-navy-700 rounded-lg px-4 py-3`. Label in `text-xs text-gray-500 uppercase`, value in `text-lg font-bold text-white`.
+Layout: `flex gap-4` container, each card `flex-1`. Style per card: `bg-navy-800 border border-navy-700 rounded-lg px-4 py-3`. Label in `text-xs text-gray-500 uppercase`, value in `text-lg font-bold text-white`.
+
+`stakeAmount` is a string — parse with `parseFloat()` for summation. Display with up to 2 decimal places. No abbreviation needed (hackathon amounts are small).
 
 All computed client-side from the `predictions` array — no new API calls or data fetching.
 
@@ -35,11 +37,10 @@ All computed client-side from the `predictions` array — no new API calls or da
 
 **File:** `frontend/components/TimelineItem.tsx`
 
-- Add a stake/pool badge on the right side of the metadata row
+- Replace the plain-text `{stakeAmount} USDC` span in the metadata row with a styled badge using `ml-auto` to push it right
   - Created state: show "Stake: X USDC"
-  - Funded/Resolving/JuryResolving/Settled: show "Pool: X×2 USDC" (both sides deposited)
-  - Style: `bg-navy-900 border border-navy-700 rounded-full px-2 py-0.5 text-xs text-gray-300`
-- Remove the plain-text `{stakeAmount} USDC` from the metadata line (replaced by badge)
+  - Funded/Resolving/JuryResolving/Settled: show "Pool: X×2 USDC" (state enum guarantees both deposits)
+  - Style: `bg-navy-900 border border-navy-700 rounded-full px-2 py-0.5 text-xs text-gray-300 ml-auto`
 
 ### 4. Filter Updates
 

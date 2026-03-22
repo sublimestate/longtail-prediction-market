@@ -29,7 +29,7 @@ export default async function PredictionPage({
   if (!isAddress(address)) {
     return (
       <main className="max-w-3xl mx-auto px-4 py-8">
-        <Link href="/" className="text-purple-400 hover:text-purple-300 text-sm mb-4 block">← Back</Link>
+        <Link href="/" className="text-purple-400 hover:text-purple-300 text-sm mb-4 block">← Longtail</Link>
         <p className="text-red-400">Invalid address</p>
       </main>
     );
@@ -43,7 +43,7 @@ export default async function PredictionPage({
   } catch (e: any) {
     return (
       <main className="max-w-3xl mx-auto px-4 py-8">
-        <Link href="/" className="text-purple-400 hover:text-purple-300 text-sm mb-4 block">← Back</Link>
+        <Link href="/" className="text-purple-400 hover:text-purple-300 text-sm mb-4 block">← Longtail</Link>
         <p className="text-red-400">Failed to load prediction: {e.message}</p>
       </main>
     );
@@ -53,22 +53,77 @@ export default async function PredictionPage({
 
   return (
     <main className="max-w-3xl mx-auto px-4 py-8">
-      <Link href="/" className="text-purple-400 hover:text-purple-300 text-sm mb-6 block">← Back</Link>
+      <Link href="/" className="text-purple-400 hover:text-purple-300 text-sm mb-6 block">← Longtail</Link>
 
-      <div className="mb-6">
-        <div className="flex items-start justify-between mb-2">
-          <h1 className="text-xl font-bold text-white flex-1 mr-4">
-            {prediction.description || 'Untitled prediction'}
-          </h1>
-          <StatusBadge state={prediction.state} />
+      <div className="bg-gradient-to-r from-purple-500 to-blue-500 rounded-lg p-[2px] mb-6">
+        <div className="bg-navy-800 rounded-lg p-5">
+          <div className="flex items-start justify-between mb-3">
+            <h1 className="text-2xl font-bold text-white flex-1 mr-4">
+              {prediction.description || 'Untitled prediction'}
+            </h1>
+            <div className="flex items-center gap-2">
+              {prediction.state === 'JuryResolving' && (
+                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-500/20 text-yellow-400">LLM Jury</span>
+              )}
+              {prediction.state === 'Resolving' && (
+                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-500/20 text-orange-400">UMA Oracle</span>
+              )}
+              <StatusBadge state={prediction.state} />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-4 mb-4">
+            <div>
+              <span className="text-xs text-gray-500">Pool</span>
+              <p className="text-sm text-white font-medium">
+                {prediction.state === 'Created'
+                  ? `${prediction.stakeAmount} USDC per side`
+                  : `${parseFloat(prediction.stakeAmount) * 2} USDC`}
+              </p>
+            </div>
+            <div>
+              <span className="text-xs text-gray-500">Deadline</span>
+              <p className="text-sm text-white">{new Date(prediction.deadline * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</p>
+            </div>
+            <div>
+              <span className="text-xs text-gray-500 block">Resolution Window</span>
+              <div className="text-sm text-white"><CountdownTimer targetTimestamp={prediction.deadline} /></div>
+            </div>
+          </div>
+          <PipelineStepper current={prediction.state} />
         </div>
-        <PipelineStepper current={prediction.state} />
       </div>
+
+      {/* Outcome Callout */}
+      {prediction.state === 'Settled' && (
+        <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 mb-4">
+          <p className="text-sm font-medium">
+            <span className={prediction.resolvedYes ? 'text-green-400' : 'text-red-400'}>
+              {prediction.resolvedYes ? 'YES' : 'NO'}
+            </span>
+            <span className="text-gray-300">
+              {' '}wins — {parseFloat(prediction.stakeAmount) * 2} USDC paid to{' '}
+              {truncateAddress(prediction.resolvedYes ? prediction.partyYes : prediction.partyNo)}
+            </span>
+          </p>
+        </div>
+      )}
+      {prediction.state === 'JuryResolving' && (
+        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-4">
+          <p className="text-sm font-medium">
+            <span className="text-gray-300">Jury proposed: </span>
+            <span className={prediction.juryOutcomeYes ? 'text-green-400' : 'text-red-400'}>
+              {prediction.juryOutcomeYes ? 'YES' : 'NO'}
+            </span>
+            <span className="text-gray-300"> — challenge window closes in </span>
+            <CountdownTimer targetTimestamp={prediction.juryDeadline} />
+          </p>
+        </div>
+      )}
 
       {/* Escrow Info */}
       <section className="bg-navy-800 border border-navy-700 rounded-lg p-4 mb-4">
         <h2 className="text-sm font-semibold text-gray-400 uppercase mb-3">Escrow Details</h2>
-        <div className="grid grid-cols-2 gap-3 text-sm">
+        <div className="grid grid-cols-3 gap-3 text-sm">
           <div>
             <span className="text-gray-500">Contract</span>
             <a href={basescanUrl} target="_blank" rel="noopener noreferrer" className="block font-mono text-purple-400 hover:text-purple-300">
@@ -76,28 +131,16 @@ export default async function PredictionPage({
             </a>
           </div>
           <div>
-            <span className="text-gray-500">Stake</span>
-            <p className="text-white">{prediction.stakeAmount} USDC</p>
-          </div>
-          <div>
             <span className="text-gray-500">Party YES</span>
-            <p className="font-mono text-white">{truncateAddress(prediction.partyYes)}</p>
+            <a href={`https://sepolia.basescan.org/address/${prediction.partyYes}`} target="_blank" rel="noopener noreferrer" className="block font-mono text-purple-400 hover:text-purple-300">{truncateAddress(prediction.partyYes)}</a>
           </div>
           <div>
             <span className="text-gray-500">Party NO</span>
             {prediction.partyNo === '0x0000000000000000000000000000000000000000' ? (
               <p className="text-purple-400 font-medium">Open — anyone can match</p>
             ) : (
-              <p className="font-mono text-white">{truncateAddress(prediction.partyNo)}</p>
+              <a href={`https://sepolia.basescan.org/address/${prediction.partyNo}`} target="_blank" rel="noopener noreferrer" className="block font-mono text-purple-400 hover:text-purple-300">{truncateAddress(prediction.partyNo)}</a>
             )}
-          </div>
-          <div>
-            <span className="text-gray-500">Deadline</span>
-            <p className="text-white">{new Date(prediction.deadline * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</p>
-          </div>
-          <div>
-            <span className="text-gray-500">Resolution Window</span>
-            <CountdownTimer targetTimestamp={prediction.deadline} />
           </div>
         </div>
       </section>
