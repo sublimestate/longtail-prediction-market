@@ -69,7 +69,8 @@ agent.addCapability({
     deployInProgress = true;
     try {
       // 1. Deploy open escrow via factory (partyNo = address(0))
-      console.log('Deploying open escrow contract...');
+      const now = Math.floor(Date.now() / 1000);
+      console.log(`Deploying open escrow contract... deadline=${spec.deadline} (${spec.deadline > now ? 'future' : 'PAST by ' + (now - spec.deadline) + 's'}), stake=${spec.stakeAmount}, desc="${spec.description}", challengeWindow=${spec.challengeWindow ?? 600}`);
       const escrowAddress = await createEscrow(
         partyYesAddr as Address,
         partyNoAddr as Address,

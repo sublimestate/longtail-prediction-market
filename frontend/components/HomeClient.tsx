@@ -46,7 +46,7 @@ export function HomeClient({ initial }: { initial: Prediction[] }) {
     return () => clearInterval(interval);
   }, []);
 
-  const filtered = filter === 'All' ? predictions : predictions.filter((p) => p.state === filter);
+  const filtered = (filter === 'All' ? predictions : predictions.filter((p) => p.state === filter)).slice().reverse();
 
   return (
     <>
