@@ -17,13 +17,20 @@ cd agents && npm run start            # Start all 4 agents (auto-provisions on f
 npx tsx agents/src/setup-workflow.ts  # Create pipeline workflow (run from project root!)
 cd agents && npx tsc --noEmit         # Type-check agent code
 cd agents && npx vitest run           # Run agent tests
+
+# Frontend
+cd frontend && npm run dev            # Dev server on localhost:3000
+cd frontend && npm run build          # Production build
+cd frontend && npx tsc --noEmit       # Type-check frontend
+vercel deploy --prod --yes            # Deploy to Vercel (from frontend/)
 ```
 
 ## Project Structure
 
-Monorepo with two npm workspaces:
+Monorepo with three npm workspaces:
 - `contracts/` — Hardhat, Solidity 0.8.24, OpenZeppelin v5, Base Sepolia
 - `agents/` — OpenServ SDK v2.x + Client v2.x, viem, ESM modules
+- `frontend/` — Next.js 16, Tailwind CSS v4, viem (read-only on-chain data)
 - Key contracts: `PredictionEscrow.sol`, `EscrowFactory.sol`
 - Key shared code: `agents/src/shared/blockchain.ts` (viem clients + contract helpers)
 - Key shared code: `agents/src/shared/types.ts` (`parsePredictionSpec` — normalizes agent output formats)
@@ -34,6 +41,10 @@ Monorepo with two npm workspaces:
 Required in `.env`:
 - `DEPLOYER_PRIVATE_KEY`, `COUNTERPARTY_PRIVATE_KEY`
 - `FACTORY_ADDRESS` (set after deploying EscrowFactory)
+
+Required in `frontend/.env.local`:
+- `FACTORY_ADDRESS`, `BASE_SEPOLIA_RPC_URL`
+- `WEBHOOK_TOKEN` (from webhook trigger URL), `OPENSERV_API_KEY`
 
 Auto-created by `provision()`:
 - `WALLET_PRIVATE_KEY` — OpenServ platform wallet (saved to `.env` and `.openserv.json`)
@@ -55,13 +66,6 @@ Hackathon URL: https://synthesis.md/
 - Resolution jury uses `generate()` for platform-delegated LLM calls (no OpenAI key needed)
 - `setup-workflow.ts` creates the unified pipeline: Webhook → Market Maker → Matchmaker → Deployer → Resolution
 - Agent IDs and credentials stored in `.openserv.json` (gitignored)
-
-## Decisions
-
-- **Resolution trust:** UMA OOv3 on Base. Escrow calls UMA directly — agent only provides claim text. 2hr dispute window, escalates to DVM if challenged.
-- **Counterparty:** Matchmaker searches for humans first, falls back to agent wallet. Band-aid for liquidity — revisit before production.
-- **Contract security:** Audited factory pattern. Agent never writes Solidity, only provides deployment params. OpenZeppelin v5 primitives.
-- **Regulatory:** Non-custodial P2P. Avoid sports/elections content without legal review.
 
 ## Gotchas
 
